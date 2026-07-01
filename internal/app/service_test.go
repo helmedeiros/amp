@@ -30,6 +30,7 @@ type fakePlayer struct {
 	names        []string
 	positionSet  float64
 	playStart    int
+	playedName   string
 }
 
 func (f *fakePlayer) Status(context.Context) (music.Status, error) {
@@ -48,6 +49,18 @@ func (f *fakePlayer) Search(_ context.Context, query string, limit int) ([]music
 func (f *fakePlayer) PlaySearch(_ context.Context, query string, limit, start int) error {
 	f.calls = append(f.calls, "PlaySearch")
 	f.searchQuery, f.searchLimit, f.playStart = query, limit, start
+	return nil
+}
+
+func (f *fakePlayer) PlayPlaylist(_ context.Context, name string) error {
+	f.calls = append(f.calls, "PlayPlaylist")
+	f.playedName = name
+	return nil
+}
+
+func (f *fakePlayer) PlayAlbum(_ context.Context, name string) error {
+	f.calls = append(f.calls, "PlayAlbum")
+	f.playedName = name
 	return nil
 }
 
@@ -158,6 +171,75 @@ func TestServiceSearchRejectsEmptyQuery(t *testing.T) {
 
 	require.Error(t, err)
 	assert.NotContains(t, fake.calls, "Search")
+}
+
+func TestServicePlayQueryResumesOnEmpty(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{}
+	svc := app.NewService(fake, &memStore{})
+
+	res, err := svc.PlayQuery(context.Background(), "  ", 50)
+
+	require.NoError(t, err)
+	assert.Equal(t, "resume", res.Kind)
+	assert.Equal(t, []string{"Play"}, fake.calls)
+}
+
+func TestServicePlayQueryPrefersPlaylist(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{playlists: []music.Playlist{{Name: "Chill"}}}
+	svc := app.NewService(fake, &memStore{})
+
+	res, err := svc.PlayQuery(context.Background(), "chill", 50) // case-insensitive
+
+	require.NoError(t, err)
+	assert.Equal(t, "playlist", res.Kind)
+	assert.Equal(t, "Chill", res.Label)
+	assert.Equal(t, "Chill", fake.playedName)
+	assert.Equal(t, []string{"Playlists", "PlayPlaylist"}, fake.calls)
+}
+
+func TestServicePlayQueryFallsBackToAlbum(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{names: []string{"Discovery"}} // no playlist match; albums list
+	svc := app.NewService(fake, &memStore{})
+
+	res, err := svc.PlayQuery(context.Background(), "discovery", 50)
+
+	require.NoError(t, err)
+	assert.Equal(t, "album", res.Kind)
+	assert.Equal(t, "Discovery", res.Label)
+	assert.Equal(t, []string{"Playlists", "Albums", "PlayAlbum"}, fake.calls)
+}
+
+func TestServicePlayQueryFallsBackToTrackSearch(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{searchResult: []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}}}
+	svc := app.NewService(fake, &memStore{})
+
+	res, err := svc.PlayQuery(context.Background(), "gorgon", 50)
+
+	require.NoError(t, err)
+	assert.Equal(t, "track", res.Kind)
+	assert.Equal(t, "Utsu-P — Gorgon", res.Label)
+	assert.Equal(t, []string{"Playlists", "Albums", "Search", "PlaySearch"}, fake.calls)
+	assert.Equal(t, 0, fake.playStart)
+}
+
+func TestServicePlayQueryNoMatchErrors(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{} // no playlists, albums, or tracks
+	svc := app.NewService(fake, &memStore{})
+
+	_, err := svc.PlayQuery(context.Background(), "nope", 50)
+
+	require.Error(t, err)
+	assert.NotContains(t, fake.calls, "PlaySearch")
 }
 
 func TestServicePlaySearchTrimsAndDelegates(t *testing.T) {

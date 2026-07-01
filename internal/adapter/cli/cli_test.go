@@ -11,6 +11,7 @@ import (
 
 	"github.com/helmedeiros/amp/internal/adapter/cli"
 	"github.com/helmedeiros/amp/internal/music"
+	"github.com/helmedeiros/amp/internal/port"
 )
 
 // fakeController records calls and returns canned data.
@@ -32,6 +33,8 @@ type fakeController struct {
 	seekValue    float64
 	seekRet      time.Duration
 	playStart    int
+	playQuery    string
+	playRet      port.PlayResult
 }
 
 func (f *fakeController) Status(context.Context) (music.Status, error) {
@@ -39,6 +42,12 @@ func (f *fakeController) Status(context.Context) (music.Status, error) {
 	return f.status, nil
 }
 func (f *fakeController) Open(context.Context) error { f.calls = append(f.calls, "Open"); return nil }
+
+func (f *fakeController) PlayQuery(_ context.Context, query string, limit int) (port.PlayResult, error) {
+	f.calls = append(f.calls, "PlayQuery")
+	f.playQuery, f.searchLimit = query, limit
+	return f.playRet, nil
+}
 
 func (f *fakeController) Search(_ context.Context, query string, limit int) ([]music.Track, error) {
 	f.calls = append(f.calls, "Search")
@@ -151,6 +160,30 @@ func TestStatusCommandHuman(t *testing.T) {
 	assert.Equal(t, []string{"Status"}, ctrl.calls)
 }
 
+func TestPlayCommandResume(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{playRet: port.PlayResult{Kind: "resume"}}
+
+	out := run(t, ctrl, "play")
+
+	assert.Equal(t, []string{"PlayQuery"}, ctrl.calls)
+	assert.Equal(t, "", ctrl.playQuery)
+	assert.Empty(t, out, "resume prints nothing")
+}
+
+func TestPlayCommandQuery(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{playRet: port.PlayResult{Kind: "playlist", Label: "Chill"}}
+
+	out := run(t, ctrl, "play", "chill")
+
+	assert.Equal(t, []string{"PlayQuery"}, ctrl.calls)
+	assert.Equal(t, "chill", ctrl.playQuery)
+	assert.Contains(t, out, "▶ playlist: Chill")
+}
+
 func TestNowCommand(t *testing.T) {
 	t.Parallel()
 
@@ -260,7 +293,6 @@ func TestTransportCommands(t *testing.T) {
 		want string
 	}{
 		{arg: "open", want: "Open"},
-		{arg: "play", want: "Play"},
 		{arg: "pause", want: "Pause"},
 		{arg: "toggle", want: "Toggle"},
 		{arg: "stop", want: "Stop"},

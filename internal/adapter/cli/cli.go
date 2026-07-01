@@ -36,7 +36,7 @@ func NewRootCmd(ctrl port.Controller) *cobra.Command {
 		playlistsCmd(ctrl),
 		libraryCmd(ctrl),
 		transportCmd(ctrl, "open", "Launch Apple Music", port.Controller.Open),
-		transportCmd(ctrl, "play", "Resume or start playback", port.Controller.Play),
+		playCmd(ctrl),
 		transportCmd(ctrl, "pause", "Pause playback", port.Controller.Pause),
 		transportCmd(ctrl, "toggle", "Toggle play/pause", port.Controller.Toggle),
 		transportCmd(ctrl, "stop", "Stop playback", port.Controller.Stop),
@@ -75,6 +75,65 @@ func nowCmd(ctrl port.Controller) *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), RenderNow(s))
 			return nil
 		},
+	}
+}
+
+func playCmd(ctrl port.Controller) *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "play [query]",
+		Short: "Resume playback, or play a playlist, album, or search match",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			res, err := ctrl.PlayQuery(cmd.Context(), strings.Join(args, " "), limit)
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			switch res.Kind {
+			case "playlist":
+				fmt.Fprintf(out, "▶ playlist: %s\n", res.Label)
+			case "album":
+				fmt.Fprintf(out, "▶ album: %s\n", res.Label)
+			case "track":
+				fmt.Fprintf(out, "▶ %s\n", res.Label)
+			}
+			return nil
+		},
+		ValidArgsFunction: playCompletions(ctrl),
+	}
+	cmd.Flags().IntVar(&limit, "limit", 50, "maximum track-search results when the query is not a playlist or album")
+
+	return cmd
+}
+
+// playCompletions offers playlist and album names for `play <TAB>`, fetched
+// live from the library.
+func playCompletions(ctrl port.Controller) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 { // the query is a single (possibly quoted) argument
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+
+		var names []string
+		if pls, err := ctrl.Playlists(cmd.Context()); err == nil {
+			for _, p := range pls {
+				names = append(names, p.Name)
+			}
+		}
+		if albums, err := ctrl.Albums(cmd.Context()); err == nil {
+			names = append(names, albums...)
+		}
+
+		lower := strings.ToLower(toComplete)
+		matches := names[:0]
+		for _, n := range names {
+			if strings.HasPrefix(strings.ToLower(n), lower) {
+				matches = append(matches, n)
+			}
+		}
+		return matches, cobra.ShellCompDirectiveNoFileComp
 	}
 }
 

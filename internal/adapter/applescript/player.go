@@ -63,6 +63,18 @@ func (p *Player) PlaySearch(ctx context.Context, query string, limit, start int)
 	return err
 }
 
+// PlayPlaylist plays the named user playlist.
+func (p *Player) PlayPlaylist(ctx context.Context, name string) error {
+	_, err := p.run.Run(ctx, javaScript, playPlaylistScript(name))
+	return err
+}
+
+// PlayAlbum loads the named album into the queue in track order and plays it.
+func (p *Player) PlayAlbum(ctx context.Context, name string) error {
+	_, err := p.run.Run(ctx, javaScript, playAlbumScript(name))
+	return err
+}
+
 // Playlists returns the user's playlists.
 func (p *Player) Playlists(ctx context.Context) ([]music.Playlist, error) {
 	out, err := p.run.Run(ctx, javaScript, playlistsScript)

@@ -37,6 +37,50 @@ func (s *Service) Status(ctx context.Context) (music.Status, error) {
 // Open launches the music application.
 func (s *Service) Open(ctx context.Context) error { return s.player.Open(ctx) }
 
+// PlayQuery resumes playback when query is empty; otherwise it resolves the
+// query, in order, to a playlist name, an album name (both matched
+// case-insensitively), or a track search, and plays the first that matches.
+func (s *Service) PlayQuery(ctx context.Context, query string, limit int) (port.PlayResult, error) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return port.PlayResult{Kind: "resume"}, s.player.Play(ctx)
+	}
+
+	if pls, err := s.player.Playlists(ctx); err == nil {
+		for _, p := range pls {
+			if strings.EqualFold(p.Name, q) {
+				return port.PlayResult{Kind: "playlist", Label: p.Name}, s.player.PlayPlaylist(ctx, p.Name)
+			}
+		}
+	}
+
+	if albums, err := s.player.Albums(ctx); err == nil {
+		for _, a := range albums {
+			if strings.EqualFold(a, q) {
+				return port.PlayResult{Kind: "album", Label: a}, s.player.PlayAlbum(ctx, a)
+			}
+		}
+	}
+
+	tracks, err := s.player.Search(ctx, q, limit)
+	if err != nil {
+		return port.PlayResult{}, fmt.Errorf("play: %w", err)
+	}
+	if len(tracks) == 0 {
+		return port.PlayResult{}, fmt.Errorf("play: nothing matched %q", q)
+	}
+	if err := s.player.PlaySearch(ctx, q, limit, 0); err != nil {
+		return port.PlayResult{}, err
+	}
+
+	first := tracks[0]
+	label := first.Name
+	if first.Artist != "" {
+		label = first.Artist + " — " + first.Name
+	}
+	return port.PlayResult{Kind: "track", Label: label}, nil
+}
+
 // Search returns library tracks matching query, up to limit (<= 0 for all).
 // The query must be non-empty once trimmed.
 func (s *Service) Search(ctx context.Context, query string, limit int) ([]music.Track, error) {

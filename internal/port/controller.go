@@ -7,6 +7,12 @@ import (
 	"github.com/helmedeiros/amp/internal/music"
 )
 
+// PlayResult reports what a smart play resolved to.
+type PlayResult struct {
+	Kind  string // "resume", "playlist", "album", or "track"
+	Label string // playlist/album name or "Artist — Title"; empty for resume
+}
+
 // Controller is the driving port: the use-case surface that driving adapters
 // (the CLI, later the TUI) depend on. The application's Service implements it.
 type Controller interface {
@@ -15,6 +21,9 @@ type Controller interface {
 	// Open launches the music application.
 	Open(ctx context.Context) error
 
+	// PlayQuery resumes playback when query is empty, otherwise resolves it to a
+	// playlist, album, or track search and plays it.
+	PlayQuery(ctx context.Context, query string, limit int) (PlayResult, error)
 	// Search returns library tracks matching query, up to limit (<= 0 for all).
 	Search(ctx context.Context, query string, limit int) ([]music.Track, error)
 	// PlaySearch plays the search results starting at the chosen index, queueing

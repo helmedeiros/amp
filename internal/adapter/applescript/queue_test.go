@@ -34,3 +34,35 @@ func TestPlayerPlaySearchRunsJavaScript(t *testing.T) {
 	assert.Equal(t, javaScript, fake.calls[0].lang)
 	assert.Contains(t, fake.calls[0].script, `"daft"`)
 }
+
+func TestPlayPlaylistScript(t *testing.T) {
+	t.Parallel()
+
+	assert.Contains(t, playPlaylistScript(`My "Chill"`),
+		`Music.userPlaylists.byName("My \"Chill\"").play();`)
+}
+
+func TestPlayAlbumScript(t *testing.T) {
+	t.Parallel()
+
+	script := playAlbumScript("Discovery")
+
+	assert.Contains(t, script, `const want = "Discovery";`)
+	assert.Contains(t, script, "only: 'albums'")
+	assert.Contains(t, script, "a.trackNumber() - b.trackNumber()")
+	assert.Contains(t, script, `Music.userPlaylists.byName("amp queue")`)
+	assert.Contains(t, script, "pl.play();")
+}
+
+func TestPlayerPlayPlaylistAndAlbum(t *testing.T) {
+	t.Parallel()
+
+	fp := &fakeRunner{}
+	require.NoError(t, newPlayer(fp).PlayPlaylist(context.Background(), "Chill"))
+	assert.Equal(t, javaScript, fp.calls[0].lang)
+	assert.Contains(t, fp.calls[0].script, `"Chill"`)
+
+	fa := &fakeRunner{}
+	require.NoError(t, newPlayer(fa).PlayAlbum(context.Background(), "Discovery"))
+	assert.Contains(t, fa.calls[0].script, `"Discovery"`)
+}

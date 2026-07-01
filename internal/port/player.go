@@ -24,6 +24,10 @@ type Player interface {
 	// PlaySearch loads the search results into the queue rotated so the track at
 	// start is first, and plays from the top.
 	PlaySearch(ctx context.Context, query string, limit, start int) error
+	// PlayPlaylist plays the named user playlist.
+	PlayPlaylist(ctx context.Context, name string) error
+	// PlayAlbum loads the named album into the queue in track order and plays it.
+	PlayAlbum(ctx context.Context, name string) error
 	// Playlists returns the user's playlists.
 	Playlists(ctx context.Context) ([]music.Playlist, error)
 	// Artists returns the distinct, sorted artist names in the library.
