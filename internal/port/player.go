@@ -28,6 +28,13 @@ type Player interface {
 	PlayPlaylist(ctx context.Context, name string) error
 	// PlayAlbum loads the named album into the queue in track order and plays it.
 	PlayAlbum(ctx context.Context, name string) error
+	// Queue returns the tracks currently in the queue.
+	Queue(ctx context.Context) ([]music.Track, error)
+	// QueueAdd appends the search results to the queue and returns how many were
+	// added.
+	QueueAdd(ctx context.Context, query string, limit int) (int, error)
+	// QueueClear empties the queue.
+	QueueClear(ctx context.Context) error
 	// Playlists returns the user's playlists.
 	Playlists(ctx context.Context) ([]music.Playlist, error)
 	// Artists returns the distinct, sorted artist names in the library.

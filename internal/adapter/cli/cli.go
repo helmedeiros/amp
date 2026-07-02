@@ -33,6 +33,7 @@ func NewRootCmd(ctrl port.Controller) *cobra.Command {
 		statusCmd(ctrl, &noColor),
 		nowCmd(ctrl),
 		searchCmd(ctrl),
+		queueCmd(ctrl),
 		playlistsCmd(ctrl),
 		libraryCmd(ctrl),
 		transportCmd(ctrl, "open", "Launch Apple Music", port.Controller.Open),
@@ -230,6 +231,74 @@ func namesSubcmd(use, short string, fetch func(context.Context) ([]string, error
 	cmd.Flags().BoolVar(&asJSON, "json", false, "output machine-readable JSON")
 
 	return cmd
+}
+
+func queueCmd(ctrl port.Controller) *cobra.Command {
+	var asJSON bool
+
+	cmd := &cobra.Command{
+		Use:   "queue",
+		Short: "Show the play queue, or add to / clear it",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tracks, err := ctrl.Queue(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			out := cmd.OutOrStdout()
+			if asJSON {
+				fmt.Fprintln(out, RenderTracksJSON(tracks))
+				return nil
+			}
+			if len(tracks) == 0 {
+				fmt.Fprintln(out, "queue is empty")
+				return nil
+			}
+			fmt.Fprintln(out, RenderTracks(tracks))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output machine-readable JSON")
+
+	cmd.AddCommand(queueAddCmd(ctrl), queueClearCmd(ctrl))
+	return cmd
+}
+
+func queueAddCmd(ctrl port.Controller) *cobra.Command {
+	var limit int
+
+	cmd := &cobra.Command{
+		Use:   "add <query>",
+		Short: "Append search results to the queue without playing",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			n, err := ctrl.QueueAdd(cmd.Context(), strings.Join(args, " "), limit)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "added %d to queue\n", n)
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 50, "maximum results to add (0 for all)")
+
+	return cmd
+}
+
+func queueClearCmd(ctrl port.Controller) *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear",
+		Short: "Empty the queue",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if err := ctrl.QueueClear(cmd.Context()); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "queue cleared")
+			return nil
+		},
+	}
 }
 
 func playlistsCmd(ctrl port.Controller) *cobra.Command {
