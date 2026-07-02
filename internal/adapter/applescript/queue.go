@@ -8,6 +8,39 @@ import (
 // queuePlaylistName is the amp-owned playlist used as the play queue.
 const queuePlaylistName = "amp queue"
 
+// playPlaylistScript plays a named user playlist.
+func playPlaylistScript(name string) string {
+	n, _ := json.Marshal(name)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+Music.userPlaylists.byName(%s).play();
+`, n)
+}
+
+// playAlbumScript loads the named album into the queue in track order and plays
+// it from the top.
+func playAlbumScript(name string) string {
+	n, _ := json.Marshal(name)
+	qn, _ := json.Marshal(queuePlaylistName)
+
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const lib = Music.libraryPlaylists[0];
+const want = %s;
+let tracks = Music.search(lib, {for: want, only: 'albums'})
+  .filter(t => t.album().toLowerCase() === want.toLowerCase());
+tracks.sort((a, b) => a.trackNumber() - b.trackNumber());
+if (tracks.length > 0) {
+  let pl;
+  try { pl = Music.userPlaylists.byName(%s); pl.name(); Music.delete(pl.tracks); }
+  catch (e) { pl = Music.make({new: 'playlist', withProperties: {name: %s}}); }
+  for (const t of tracks) Music.duplicate(t, {to: pl});
+  pl.play();
+}
+JSON.stringify({queued: tracks.length});
+`, n, qn, qn)
+}
+
 // playSearchScript builds a JXA program that re-runs the library search, loads
 // the results into the managed queue playlist rotated so the chosen track is
 // first, and plays the playlist from the top. Everything after the pick plays

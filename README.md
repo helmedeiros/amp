@@ -31,7 +31,8 @@ amp status            # show what's playing (add --json for scripts)
 amp now               # the current track on one line
 
 amp open              # launch Apple Music
-amp play              # transport
+amp play              # resume playback
+amp play "Discovery"  # play a playlist, album, or search match (Tab-completes names)
 amp pause
 amp toggle            # play/pause
 amp stop
