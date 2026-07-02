@@ -27,9 +27,11 @@ func playAlbumScript(name string) string {
 const Music = Application('Music');
 const lib = Music.libraryPlaylists[0];
 const want = %s;
-let tracks = Music.search(lib, {for: want, only: 'albums'})
-  .filter(t => t.album().toLowerCase() === want.toLowerCase());
-tracks.sort((a, b) => a.trackNumber() - b.trackNumber());
+let tracks = [];
+for (const t of Music.search(lib, {for: want, only: 'albums'})) {
+  try { if (t.album().toLowerCase() === want.toLowerCase()) tracks.push(t); } catch (e) {}
+}
+tracks.sort((a, b) => { try { return a.trackNumber() - b.trackNumber(); } catch (e) { return 0; } });
 if (tracks.length > 0) {
   let pl;
   try { pl = Music.userPlaylists.byName(%s); pl.name(); Music.delete(pl.tracks); }
@@ -54,9 +56,15 @@ func playSearchScript(query string, limit, start int) string {
 	return fmt.Sprintf(`
 const Music = Application('Music');
 const lib = Music.libraryPlaylists[0];
-let res = Music.search(lib, {for: %s, only: 'all'});
+let raw = Music.search(lib, {for: %s, only: 'all'});
 const limit = %d;
-if (limit > 0) res = res.slice(0, limit);
+if (limit > 0) raw = raw.slice(0, limit);
+// Keep only tracks we can fully read, matching the search listing so the
+// chosen index still lines up (some search hits are stale, throwing -1728).
+let res = [];
+for (const t of raw) {
+  try { t.name(); t.artist(); t.album(); t.duration(); res.push(t); } catch (e) {}
+}
 if (res.length > 0) {
   const s = (((%d) %% res.length) + res.length) %% res.length;
   res = res.slice(s).concat(res.slice(0, s));

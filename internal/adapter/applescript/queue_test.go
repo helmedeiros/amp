@@ -15,7 +15,8 @@ func TestPlaySearchScript(t *testing.T) {
 
 	assert.Contains(t, script, `Music.search(lib, {for: "the \"one\"", only: 'all'})`)
 	assert.Contains(t, script, "const limit = 25;") // limit
-	assert.Contains(t, script, "res.slice(0, limit)")
+	assert.Contains(t, script, "raw.slice(0, limit)")
+	assert.Contains(t, script, "res.push(t)")         // filters unreadable tracks
 	assert.Contains(t, script, "(((3) % res.length)") // rotation by start
 	assert.Contains(t, script, `Music.userPlaylists.byName("amp queue")`)
 	assert.Contains(t, script, "pl.play();")
