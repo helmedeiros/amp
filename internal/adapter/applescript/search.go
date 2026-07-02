@@ -22,7 +22,11 @@ if (Music.running()) {
   const limit = %d;
   if (limit > 0) res = res.slice(0, limit);
   for (const t of res) {
-    out.push({name: t.name(), artist: t.artist(), album: t.album(), duration: t.duration()});
+    // Search can return stale references that throw -1728 on every property;
+    // skip any track we cannot fully read.
+    try {
+      out.push({name: t.name(), artist: t.artist(), album: t.album(), duration: t.duration()});
+    } catch (e) {}
   }
 }
 JSON.stringify(out);
