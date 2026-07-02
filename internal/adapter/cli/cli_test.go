@@ -61,6 +61,22 @@ func (f *fakeController) PlaySearch(_ context.Context, query string, limit, star
 	return nil
 }
 
+func (f *fakeController) Queue(context.Context) ([]music.Track, error) {
+	f.calls = append(f.calls, "Queue")
+	return f.searchResult, nil
+}
+
+func (f *fakeController) QueueAdd(_ context.Context, query string, limit int) (int, error) {
+	f.calls = append(f.calls, "QueueAdd")
+	f.searchQuery, f.searchLimit = query, limit
+	return len(f.searchResult), nil
+}
+
+func (f *fakeController) QueueClear(context.Context) error {
+	f.calls = append(f.calls, "QueueClear")
+	return nil
+}
+
 func (f *fakeController) Playlists(context.Context) ([]music.Playlist, error) {
 	f.calls = append(f.calls, "Playlists")
 	return f.playlists, nil
@@ -220,6 +236,44 @@ func TestSearchCommandJSONAndLimit(t *testing.T) {
 
 	assert.Equal(t, 5, ctrl.searchLimit)
 	assert.Contains(t, out, `"name":"Gorgon"`)
+}
+
+func TestQueueShowCommand(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{searchResult: []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}}}
+	out := run(t, ctrl, "queue")
+
+	assert.Equal(t, []string{"Queue"}, ctrl.calls)
+	assert.Contains(t, out, "Utsu-P — Gorgon")
+}
+
+func TestQueueShowEmpty(t *testing.T) {
+	t.Parallel()
+
+	out := run(t, &fakeController{}, "queue")
+	assert.Contains(t, out, "queue is empty")
+}
+
+func TestQueueAddCommand(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{searchResult: []music.Track{{Name: "a"}, {Name: "b"}}}
+	out := run(t, ctrl, "queue", "add", "daft", "punk")
+
+	assert.Equal(t, []string{"QueueAdd"}, ctrl.calls)
+	assert.Equal(t, "daft punk", ctrl.searchQuery)
+	assert.Contains(t, out, "added 2 to queue")
+}
+
+func TestQueueClearCommand(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{}
+	out := run(t, ctrl, "queue", "clear")
+
+	assert.Equal(t, []string{"QueueClear"}, ctrl.calls)
+	assert.Contains(t, out, "queue cleared")
 }
 
 func TestPlaylistsCommand(t *testing.T) {

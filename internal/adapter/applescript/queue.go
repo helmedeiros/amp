@@ -8,6 +8,57 @@ import (
 // queuePlaylistName is the amp-owned playlist used as the play queue.
 const queuePlaylistName = "amp queue"
 
+// queueTracksScript reads the tracks currently in the queue playlist. A missing
+// playlist (or any unreadable track) yields fewer entries rather than an error.
+func queueTracksScript() string {
+	qn, _ := json.Marshal(queuePlaylistName)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const out = [];
+try {
+  const pl = Music.userPlaylists.byName(%s);
+  pl.name();
+  for (const t of pl.tracks()) {
+    try { out.push({name: t.name(), artist: t.artist(), album: t.album(), duration: t.duration()}); } catch (e) {}
+  }
+} catch (e) {}
+JSON.stringify(out);
+`, qn)
+}
+
+// queueAddScript appends the search results to the queue playlist without
+// clearing it or starting playback.
+func queueAddScript(query string, limit int) string {
+	q, _ := json.Marshal(query)
+	qn, _ := json.Marshal(queuePlaylistName)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const lib = Music.libraryPlaylists[0];
+let raw = Music.search(lib, {for: %s, only: 'all'});
+const limit = %d;
+if (limit > 0) raw = raw.slice(0, limit);
+let res = [];
+for (const t of raw) {
+  try { t.name(); t.artist(); t.album(); t.duration(); res.push(t); } catch (e) {}
+}
+let pl;
+try { pl = Music.userPlaylists.byName(%s); pl.name(); }
+catch (e) { pl = Music.make({new: 'playlist', withProperties: {name: %s}}); }
+for (const t of res) Music.duplicate(t, {to: pl});
+JSON.stringify({added: res.length});
+`, q, limit, qn, qn)
+}
+
+// queueClearScript empties the queue playlist, keeping the playlist itself.
+func queueClearScript() string {
+	qn, _ := json.Marshal(queuePlaylistName)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+try { const pl = Music.userPlaylists.byName(%s); pl.name(); Music.delete(pl.tracks); } catch (e) {}
+JSON.stringify({cleared: true});
+`, qn)
+}
+
 // playPlaylistScript plays a named user playlist.
 func playPlaylistScript(name string) string {
 	n, _ := json.Marshal(name)

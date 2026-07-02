@@ -64,6 +64,22 @@ func (f *fakePlayer) PlayAlbum(_ context.Context, name string) error {
 	return nil
 }
 
+func (f *fakePlayer) Queue(context.Context) ([]music.Track, error) {
+	f.calls = append(f.calls, "Queue")
+	return f.searchResult, nil
+}
+
+func (f *fakePlayer) QueueAdd(_ context.Context, query string, limit int) (int, error) {
+	f.calls = append(f.calls, "QueueAdd")
+	f.searchQuery, f.searchLimit = query, limit
+	return len(f.searchResult), nil
+}
+
+func (f *fakePlayer) QueueClear(context.Context) error {
+	f.calls = append(f.calls, "QueueClear")
+	return nil
+}
+
 func (f *fakePlayer) Playlists(context.Context) ([]music.Playlist, error) {
 	f.calls = append(f.calls, "Playlists")
 	return f.playlists, nil
@@ -264,6 +280,39 @@ func TestServicePlaySearchRejectsBadInput(t *testing.T) {
 	require.Error(t, svc.PlaySearch(context.Background(), "   ", 50, 0))
 	require.Error(t, svc.PlaySearch(context.Background(), "utsu", 50, -1))
 	assert.NotContains(t, fake.calls, "PlaySearch")
+}
+
+func TestServiceQueueOps(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{searchResult: []music.Track{{Name: "Gorgon"}, {Name: "Vulgar"}}}
+	svc := app.NewService(fake, &memStore{})
+	ctx := context.Background()
+
+	tracks, err := svc.Queue(ctx)
+	require.NoError(t, err)
+	assert.Len(t, tracks, 2)
+
+	n, err := svc.QueueAdd(ctx, "  utsu  ", 50)
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, "utsu", fake.searchQuery, "query is trimmed")
+
+	require.NoError(t, svc.QueueClear(ctx))
+
+	assert.Equal(t, []string{"Queue", "QueueAdd", "QueueClear"}, fake.calls)
+}
+
+func TestServiceQueueAddRejectsEmpty(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{}
+	svc := app.NewService(fake, &memStore{})
+
+	_, err := svc.QueueAdd(context.Background(), "  ", 50)
+
+	require.Error(t, err)
+	assert.NotContains(t, fake.calls, "QueueAdd")
 }
 
 func TestServicePlaylistsDelegates(t *testing.T) {

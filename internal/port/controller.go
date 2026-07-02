@@ -29,6 +29,13 @@ type Controller interface {
 	// PlaySearch plays the search results starting at the chosen index, queueing
 	// the rest.
 	PlaySearch(ctx context.Context, query string, limit, start int) error
+	// Queue returns the tracks currently in the queue.
+	Queue(ctx context.Context) ([]music.Track, error)
+	// QueueAdd appends the search results to the queue and returns how many were
+	// added.
+	QueueAdd(ctx context.Context, query string, limit int) (int, error)
+	// QueueClear empties the queue.
+	QueueClear(ctx context.Context) error
 	// Playlists returns the user's playlists.
 	Playlists(ctx context.Context) ([]music.Playlist, error)
 	// Artists returns the distinct, sorted artist names in the library.

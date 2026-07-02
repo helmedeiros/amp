@@ -104,6 +104,26 @@ func (s *Service) PlaySearch(ctx context.Context, query string, limit, start int
 	return s.player.PlaySearch(ctx, q, limit, start)
 }
 
+// Queue returns the tracks currently in the queue.
+func (s *Service) Queue(ctx context.Context) ([]music.Track, error) {
+	return s.player.Queue(ctx)
+}
+
+// QueueAdd appends the search results for a non-empty query to the queue and
+// returns how many were added.
+func (s *Service) QueueAdd(ctx context.Context, query string, limit int) (int, error) {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return 0, fmt.Errorf("queue add: empty query")
+	}
+	return s.player.QueueAdd(ctx, q, limit)
+}
+
+// QueueClear empties the queue.
+func (s *Service) QueueClear(ctx context.Context) error {
+	return s.player.QueueClear(ctx)
+}
+
 // Playlists returns the user's playlists.
 func (s *Service) Playlists(ctx context.Context) ([]music.Playlist, error) {
 	return s.player.Playlists(ctx)

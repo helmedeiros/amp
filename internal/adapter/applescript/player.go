@@ -5,6 +5,7 @@ package applescript
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/helmedeiros/amp/internal/music"
@@ -72,6 +73,37 @@ func (p *Player) PlayPlaylist(ctx context.Context, name string) error {
 // PlayAlbum loads the named album into the queue in track order and plays it.
 func (p *Player) PlayAlbum(ctx context.Context, name string) error {
 	_, err := p.run.Run(ctx, javaScript, playAlbumScript(name))
+	return err
+}
+
+// Queue returns the tracks currently in the queue.
+func (p *Player) Queue(ctx context.Context) ([]music.Track, error) {
+	out, err := p.run.Run(ctx, javaScript, queueTracksScript())
+	if err != nil {
+		return nil, err
+	}
+	return parseTracks(out)
+}
+
+// QueueAdd appends the search results to the queue and returns how many were
+// added.
+func (p *Player) QueueAdd(ctx context.Context, query string, limit int) (int, error) {
+	out, err := p.run.Run(ctx, javaScript, queueAddScript(query, limit))
+	if err != nil {
+		return 0, err
+	}
+	var res struct {
+		Added int `json:"added"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return 0, fmt.Errorf("decode queue add: %w", err)
+	}
+	return res.Added, nil
+}
+
+// QueueClear empties the queue.
+func (p *Player) QueueClear(ctx context.Context) error {
+	_, err := p.run.Run(ctx, javaScript, queueClearScript())
 	return err
 }
 

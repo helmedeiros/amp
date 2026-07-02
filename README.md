@@ -51,6 +51,9 @@ amp shuffle on | off
 amp repeat off | one | all
 
 amp search daft punk        # search the library (--limit N, --json)
+amp queue                   # show the play queue (--json)
+amp queue add daft punk     # append search results without playing (--limit N)
+amp queue clear             # empty the queue
 amp playlists               # list your playlists (--json)
 amp library artists         # distinct artists (--json)
 amp library albums          # distinct albums (--json)
