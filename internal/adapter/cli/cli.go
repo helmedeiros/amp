@@ -55,16 +55,16 @@ func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 		unmuteCmd(ctrl),
 		shuffleCmd(ctrl),
 		repeatCmd(ctrl),
-		tuiCmd(stream),
+		tuiCmd(ctrl, stream),
 	)
 
 	return root
 }
 
-func tuiCmd(stream StatusStream) *cobra.Command {
+func tuiCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
-		Short: "Live full-screen now-playing view",
+		Short: "Live full-screen now-playing view with tabs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if stream == nil {
@@ -74,7 +74,7 @@ func tuiCmd(stream StatusStream) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return tui.RunDashboard(cmd.Context(), ch)
+			return tui.RunApp(cmd.Context(), ctrl, ch)
 		},
 	}
 }
