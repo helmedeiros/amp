@@ -153,7 +153,7 @@ func run(t *testing.T, ctrl *fakeController, args ...string) string {
 	t.Helper()
 
 	var out bytes.Buffer
-	cmd := cli.NewRootCmd(ctrl)
+	cmd := cli.NewRootCmd(ctrl, nil)
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
@@ -500,7 +500,7 @@ func TestRepeatCommandRejectsUnknownMode(t *testing.T) {
 	t.Parallel()
 
 	var out bytes.Buffer
-	cmd := cli.NewRootCmd(&fakeController{})
+	cmd := cli.NewRootCmd(&fakeController{}, nil)
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"repeat", "sometimes"})
