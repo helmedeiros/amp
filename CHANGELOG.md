@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-07-03
+
+### Added
+
+- **`amd` daemon:** polls Music.app, caches the latest status, and serves it
+  plus change events to clients over a Unix socket (newline-delimited JSON:
+  `status`, `ping`, `subscribe`). `subscribe` streams a message on every change.
+- `amp status` and `amp now` are served from the daemon's cache when it is
+  running (~instant vs ~0.5s direct), falling back to direct AppleScript
+  automatically when it is not. Other commands are unaffected.
+
 ## [0.1.0] - 2026-07-02
 
 First release: the project is rebuilt from an iTunes shell wrapper into **amp**,
@@ -34,4 +45,5 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.2.0]: https://github.com/helmedeiros/amp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/helmedeiros/amp/releases/tag/v0.1.0
