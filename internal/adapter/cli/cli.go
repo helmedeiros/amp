@@ -15,9 +15,15 @@ import (
 	"github.com/helmedeiros/amp/internal/port"
 )
 
-// NewRootCmd builds the command tree wired to a Controller. Output is written
-// to the command's configured streams so it can be captured in tests.
-func NewRootCmd(ctrl port.Controller) *cobra.Command {
+// StatusStream opens a channel of live status updates for the TUI (from the
+// daemon's event stream, or a polling fallback). It may be nil when no stream
+// is configured.
+type StatusStream func(ctx context.Context) (<-chan music.Status, error)
+
+// NewRootCmd builds the command tree wired to a Controller. stream powers the
+// `tui` command and may be nil. Output is written to the command's configured
+// streams so it can be captured in tests.
+func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 	var noColor bool
 
 	root := &cobra.Command{
@@ -49,9 +55,28 @@ func NewRootCmd(ctrl port.Controller) *cobra.Command {
 		unmuteCmd(ctrl),
 		shuffleCmd(ctrl),
 		repeatCmd(ctrl),
+		tuiCmd(stream),
 	)
 
 	return root
+}
+
+func tuiCmd(stream StatusStream) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tui",
+		Short: "Live full-screen now-playing view",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if stream == nil {
+				return fmt.Errorf("tui: no status stream configured")
+			}
+			ch, err := stream(cmd.Context())
+			if err != nil {
+				return err
+			}
+			return tui.RunDashboard(cmd.Context(), ch)
+		},
+	}
 }
 
 // buildVersion reports the module version this binary was built from, falling

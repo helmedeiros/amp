@@ -52,3 +52,41 @@ func (c *Client) Status(ctx context.Context) (music.Status, error) {
 	}
 	return resp.Status.ToStatus(), nil
 }
+
+// Subscribe opens a streaming connection and delivers the current status plus
+// every change on the returned channel until ctx is cancelled or the daemon
+// closes the connection. It errors (fast) when the daemon is not running.
+func (c *Client) Subscribe(ctx context.Context) (<-chan music.Status, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", c.socket)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.NewEncoder(conn).Encode(daemon.Request{Cmd: "subscribe"}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	out := make(chan music.Status)
+	go func() {
+		defer close(out)
+		defer func() { _ = conn.Close() }()
+		go func() { <-ctx.Done(); _ = conn.Close() }() // unblock the decoder on cancel
+
+		dec := json.NewDecoder(conn)
+		for {
+			var resp daemon.Response
+			if err := dec.Decode(&resp); err != nil {
+				return
+			}
+			if resp.Status == nil {
+				continue
+			}
+			select {
+			case out <- resp.Status.ToStatus():
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out, nil
+}
