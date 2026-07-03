@@ -1,4 +1,4 @@
-// Command am controls Apple Music from the terminal.
+// Command amp controls Apple Music from the terminal.
 package main
 
 import (
@@ -9,13 +9,20 @@ import (
 
 	"github.com/helmedeiros/amp/internal/adapter/applescript"
 	"github.com/helmedeiros/amp/internal/adapter/cli"
+	"github.com/helmedeiros/amp/internal/adapter/daemonclient"
 	"github.com/helmedeiros/amp/internal/adapter/store"
 	"github.com/helmedeiros/amp/internal/app"
+	"github.com/helmedeiros/amp/internal/daemon"
 )
 
 func main() {
 	svc := app.NewService(applescript.New(), store.NewFile(volumeStatePath()))
-	root := cli.NewRootCmd(svc)
+
+	// Serve status from the daemon when it is running (fast, cached); every
+	// other call, and status when the daemon is down, goes direct.
+	ctrl := daemonclient.NewController(svc, daemonclient.New(daemon.SocketPath()))
+
+	root := cli.NewRootCmd(ctrl)
 
 	if err := root.ExecuteContext(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "amp:", err)

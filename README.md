@@ -69,6 +69,19 @@ piped or redirected, and can be turned off explicitly with `--no-color` or the
 `NO_COLOR` environment variable. To keep color under `watch`, use
 `watch --color -n1 amp status`.
 
+## Daemon (optional)
+
+`amd` is a background daemon that polls Music.app and, over a Unix socket,
+serves the cached status and pushes change events. Run it and `amp status` /
+`amp now` are served from the cache almost instantly instead of querying
+Music.app each time — handy under `watch`. When the daemon isn't running, amp
+falls back to direct access automatically; nothing else changes.
+
+```sh
+amd &          # start the daemon (Ctrl-C or kill to stop)
+amp status     # now served from the cache (~instant)
+```
+
 ## Shell completion
 
 `amp` generates completion scripts for bash, zsh, fish, and PowerShell. The zsh
