@@ -135,16 +135,34 @@ func TestAppEnterPlaysArtistByName(t *testing.T) {
 	assert.Equal(t, "Daft Punk", ctrl.playedName)
 }
 
-func TestAppSearchTabEntersEditMode(t *testing.T) {
+func TestAppSearchTabDoesNotTrapNavigation(t *testing.T) {
 	t.Parallel()
 
 	m := newTestApp(&stubController{})
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")}) // switch to Search
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")}) // to Search
 	m = next.(app)
 
 	assert.Equal(t, tabSearch, m.active)
-	assert.True(t, m.searchEditing, "the Search tab starts in edit mode when empty")
-	assert.Contains(t, m.View(), "search:")
+	assert.False(t, m.searchEditing, "switching to Search must not trap number keys")
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")}) // back to Queue
+	assert.Equal(t, tabQueue, next.(app).active)
+}
+
+func TestAppSlashStartsSearchEdit(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+
+	assert.True(t, m.searchEditing, "/ enters edit mode")
+	assert.Contains(t, m.hint(), "esc cancel")
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // esc leaves edit mode
+	assert.False(t, next.(app).searchEditing)
 }
 
 func TestAppSearchTypeAndSubmit(t *testing.T) {
@@ -152,8 +170,11 @@ func TestAppSearchTypeAndSubmit(t *testing.T) {
 
 	ctrl := &stubController{searchResult: []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}}}
 	m := newTestApp(ctrl)
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")}) // Search tab
 	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}) // start typing
+	m = next.(app)
+	require.True(t, m.searchEditing)
 
 	// type "utsu"
 	for _, r := range "utsu" {
