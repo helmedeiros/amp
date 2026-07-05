@@ -46,11 +46,6 @@ func (f *fakePlayer) SaveArtwork(_ context.Context, path string) error {
 	return nil
 }
 
-func (f *fakePlayer) Artwork(context.Context) ([]byte, error) {
-	f.calls = append(f.calls, "Artwork")
-	return nil, nil
-}
-
 func (f *fakePlayer) Search(_ context.Context, query string, limit int) ([]music.Track, error) {
 	f.calls = append(f.calls, "Search")
 	f.searchQuery, f.searchLimit = query, limit

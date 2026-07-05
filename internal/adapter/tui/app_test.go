@@ -22,7 +22,6 @@ type stubController struct {
 	albums    []string
 
 	searchResult []music.Track
-	artwork      []byte
 
 	calls      []string
 	playedName string
@@ -53,11 +52,6 @@ func (s *stubController) Toggle(context.Context) error {
 	return nil
 }
 
-func (s *stubController) Artwork(context.Context) ([]byte, error) {
-	s.calls = append(s.calls, "Artwork")
-	return s.artwork, nil
-}
-
 func (s *stubController) Search(_ context.Context, query string, _ int) ([]music.Track, error) {
 	s.calls = append(s.calls, "Search")
 	s.playedName = query
@@ -80,11 +74,7 @@ func playingStatus() music.Status {
 }
 
 func newTestApp(ctrl port.Controller) app {
-	// A closed channel makes waitForStatus return immediately (streamClosedMsg)
-	// instead of blocking on a nil channel when a batched command is drained.
-	ch := make(chan music.Status)
-	close(ch)
-	return newApp(context.Background(), ctrl, ch)
+	return newApp(context.Background(), ctrl, nil)
 }
 
 func TestFetchTab(t *testing.T) {
@@ -207,50 +197,6 @@ func TestAppSearchResultEnterPlaysByIndex(t *testing.T) {
 	assert.Equal(t, []string{"PlaySearch"}, ctrl.calls)
 	assert.Equal(t, "utsu", ctrl.playedName)
 	assert.Equal(t, 1, ctrl.playedIdx)
-}
-
-func TestAppFetchesArtOnTrackChange(t *testing.T) {
-	t.Setenv("AMP_ART", "1") // force Kitty support
-
-	ctrl := &stubController{artwork: tinyPNG(t, 100, 100)}
-	m := newTestApp(ctrl)
-
-	_, cmd := m.Update(statusMsg(playingStatus()))
-	require.NotNil(t, cmd)
-
-	// Drain the batch; one branch is the art fetch.
-	msgs := drainBatch(cmd)
-	assert.Contains(t, ctrl.calls, "Artwork")
-	var gotArt bool
-	for _, msg := range msgs {
-		if am, ok := msg.(artMsg); ok && am.escape != "" {
-			gotArt = true
-		}
-	}
-	assert.True(t, gotArt, "a track change fetches and encodes artwork")
-}
-
-func TestAppRendersArtEscape(t *testing.T) {
-	t.Parallel()
-
-	m := newTestApp(&stubController{})
-	next, _ := m.Update(artMsg{escape: "\x1b_Ga=T;PAYLOAD\x1b\\"})
-	assert.Contains(t, next.(app).View(), "\x1b_Ga=T;PAYLOAD")
-}
-
-// drainBatch runs a (possibly batched) command and returns the produced msgs.
-func drainBatch(cmd tea.Cmd) []tea.Msg {
-	msg := cmd()
-	if batch, ok := msg.(tea.BatchMsg); ok {
-		var out []tea.Msg
-		for _, c := range batch {
-			if c != nil {
-				out = append(out, c())
-			}
-		}
-		return out
-	}
-	return []tea.Msg{msg}
 }
 
 func TestAppSpaceToggles(t *testing.T) {
