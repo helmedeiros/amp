@@ -19,7 +19,7 @@ type stubController struct {
 	queue     []music.Track
 	playlists []music.Playlist
 	artists   []string
-	albums    []string
+	albums    []music.Album
 
 	searchResult []music.Track
 
@@ -32,8 +32,8 @@ func (s *stubController) Queue(context.Context) ([]music.Track, error) { return 
 func (s *stubController) Playlists(context.Context) ([]music.Playlist, error) {
 	return s.playlists, nil
 }
-func (s *stubController) Artists(context.Context) ([]string, error) { return s.artists, nil }
-func (s *stubController) Albums(context.Context) ([]string, error)  { return s.albums, nil }
+func (s *stubController) Artists(context.Context) ([]string, error)     { return s.artists, nil }
+func (s *stubController) Albums(context.Context) ([]music.Album, error) { return s.albums, nil }
 
 func (s *stubController) PlayQueueAt(_ context.Context, index int) error {
 	s.calls = append(s.calls, "PlayQueueAt")
@@ -82,24 +82,28 @@ func TestFetchTab(t *testing.T) {
 
 	ctrl := &stubController{
 		queue:     []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}},
-		playlists: []music.Playlist{{Name: "Chill", Count: 42}},
+		playlists: []music.Playlist{{Name: "Chill", Count: 42, Artists: []string{"Daft Punk"}}},
 		artists:   []string{"Daft Punk"},
-		albums:    []string{"Discovery"},
+		albums:    []music.Album{{Name: "Discovery", Artist: "Daft Punk"}},
 	}
 
-	q, _, _ := fetchTab(context.Background(), ctrl, tabQueue)
+	q, _, qk, _ := fetchTab(context.Background(), ctrl, tabQueue)
 	assert.Equal(t, []string{"Utsu-P — Gorgon"}, q)
+	assert.Equal(t, []string{"utsu-p  gorgon"}, qk, "queue key carries artist+album+title")
 
-	p, pv, _ := fetchTab(context.Background(), ctrl, tabPlaylists)
+	p, pv, pk, _ := fetchTab(context.Background(), ctrl, tabPlaylists)
 	assert.Equal(t, []string{"Chill  (42)"}, p)
 	assert.Equal(t, []string{"Chill"}, pv, "playlist action value is the name")
+	assert.Equal(t, []string{"chill daft punk"}, pk, "playlist key carries its artists")
 
-	a, av, _ := fetchTab(context.Background(), ctrl, tabArtists)
+	a, av, _, _ := fetchTab(context.Background(), ctrl, tabArtists)
 	assert.Equal(t, []string{"Daft Punk"}, a)
 	assert.Equal(t, []string{"Daft Punk"}, av)
 
-	al, _, _ := fetchTab(context.Background(), ctrl, tabAlbums)
-	assert.Equal(t, []string{"Discovery"}, al)
+	al, alv, alk, _ := fetchTab(context.Background(), ctrl, tabAlbums)
+	assert.Equal(t, []string{"Daft Punk — Discovery"}, al, "album line shows artist")
+	assert.Equal(t, []string{"Discovery"}, alv, "album play target is the name")
+	assert.Equal(t, []string{"discovery daft punk"}, alk)
 }
 
 func TestAppEnterPlaysQueueByIndex(t *testing.T) {
@@ -201,6 +205,68 @@ func TestAppFilterQueuePlaysMappedIndex(t *testing.T) {
 	cmd()
 	assert.Equal(t, []string{"PlayQueueAt"}, ctrl.calls)
 	assert.Equal(t, 2, ctrl.playedIdx, `"C tune" is index 2 in the full queue`)
+}
+
+func TestAppFilterPlaylistByArtist(t *testing.T) {
+	t.Parallel()
+
+	// Two playlists whose NAMES don't contain "daft", but one contains a Daft
+	// Punk track. Filtering by the artist should surface that playlist.
+	ctrl := &stubController{
+		playlists: []music.Playlist{
+			{Name: "Road Trip", Count: 10, Artists: []string{"Daft Punk", "Justice"}},
+			{Name: "Focus", Count: 8, Artists: []string{"Nils Frahm"}},
+		},
+	}
+	m := newTestApp(ctrl)
+	m.active = tabPlaylists
+	next, _ := m.Update(m.loadTab(tabPlaylists)())
+	m = next.(app)
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	for _, r := range "daft" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+
+	assert.Equal(t, 1, m.lists[tabPlaylists].Len(), "only the playlist containing the artist remains")
+	view := m.View()
+	assert.Contains(t, view, "Road Trip")
+	assert.NotContains(t, view, "Focus")
+
+	// Enter keeps it; playing plays that playlist by name.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(app)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, "Road Trip", ctrl.playedName)
+}
+
+func TestAppFilterAlbumByArtist(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{
+		albums: []music.Album{
+			{Name: "Discovery", Artist: "Daft Punk"},
+			{Name: "Immunity", Artist: "Jon Hopkins"},
+		},
+	}
+	m := newTestApp(ctrl)
+	m.active = tabAlbums
+	next, _ := m.Update(m.loadTab(tabAlbums)())
+	m = next.(app)
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	for _, r := range "hopkins" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+
+	assert.Equal(t, 1, m.lists[tabAlbums].Len())
+	assert.Contains(t, m.View(), "Jon Hopkins — Immunity")
 }
 
 func TestAppEscClearsFilter(t *testing.T) {

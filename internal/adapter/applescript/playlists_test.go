@@ -11,7 +11,7 @@ import (
 func TestParsePlaylists(t *testing.T) {
 	t.Parallel()
 
-	raw := []byte(`[{"name":"Favourites","count":1038},{"name":"Chill","count":42}]`)
+	raw := []byte(`[{"name":"Favourites","count":1038,"artists":["Daft Punk","Justice"]},{"name":"Chill","count":42}]`)
 
 	got, err := parsePlaylists(raw)
 
@@ -19,7 +19,15 @@ func TestParsePlaylists(t *testing.T) {
 	require.Len(t, got, 2)
 	assert.Equal(t, "Favourites", got[0].Name)
 	assert.Equal(t, 1038, got[0].Count)
+	assert.Equal(t, []string{"Daft Punk", "Justice"}, got[0].Artists)
 	assert.Equal(t, "Chill", got[1].Name)
+}
+
+func TestPlaylistsScriptFetchesArtists(t *testing.T) {
+	t.Parallel()
+
+	assert.Contains(t, playlistsScript, "p.tracks.artist()")
+	assert.Contains(t, playlistsScript, "artists:")
 }
 
 func TestPlayerPlaylistsRunsJavaScript(t *testing.T) {

@@ -118,6 +118,38 @@ func RenderNames(names []string, asJSON bool) string {
 	return strings.Join(names, "\n")
 }
 
+// RenderAlbums formats an album list, one "Artist — Album" per line (just the
+// album when the artist is unknown), or "empty" when there are none. With
+// asJSON it returns a JSON array of {name, artist}.
+func RenderAlbums(albums []music.Album, asJSON bool) string {
+	if asJSON {
+		payload := make([]albumJSON, len(albums))
+		for i, a := range albums {
+			payload[i] = albumJSON{Name: a.Name, Artist: a.Artist}
+		}
+		out, _ := json.Marshal(payload)
+		return string(out)
+	}
+	if len(albums) == 0 {
+		return "empty"
+	}
+	lines := make([]string, len(albums))
+	for i, a := range albums {
+		if a.Artist == "" {
+			lines[i] = a.Name
+			continue
+		}
+		lines[i] = a.Artist + " — " + a.Name
+	}
+	return strings.Join(lines, "\n")
+}
+
+// albumJSON is the stable machine-readable shape of an album.
+type albumJSON struct {
+	Name   string `json:"name"`
+	Artist string `json:"artist"`
+}
+
 // RenderPlaylists formats a playlist list, one "Name  (N)" per line, or a
 // short placeholder when empty.
 func RenderPlaylists(playlists []music.Playlist) string {

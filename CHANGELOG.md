@@ -13,6 +13,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `Enter` keeps the narrowed list and returns to navigation (`j`/`k` move,
   `Enter` plays — the highlighted row maps back to its real position); `Esc`
   clears the filter. The Search tab keeps its library-wide search.
+- **Filter by artist across tabs.** The filter matches an artist-aware key, not
+  just the visible text: on **Albums** the artist is shown (`Artist — Album`, or
+  `Various Artists` for mixed albums) and matched; on **Playlists**, typing an
+  artist surfaces every playlist that contains a track by them, even when the
+  playlist name doesn't mention it.
+
+### Changed
+
+- `library albums` now prints `Artist — Album` (and `--json` emits
+  `{"name","artist"}` objects) so same-named or mixed albums are
+  distinguishable.
 
 ## [0.4.0] - 2026-07-05
 

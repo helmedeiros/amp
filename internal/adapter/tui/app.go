@@ -49,6 +49,7 @@ type (
 		tab    tabID
 		items  []string
 		values []string
+		keys   []string // per-row filter keys (lowercased; may include artists)
 		err    error
 	}
 	actionDoneMsg    struct{}
@@ -73,6 +74,7 @@ type app struct {
 	lists  []list
 	items  [][]string // per-tab full display lines (source for filtering)
 	values [][]string // per-tab action targets (playlist/album/artist names)
+	keys   [][]string // per-tab, per-row filter keys (lowercased, artist-aware)
 	loaded []bool
 
 	// filtering narrows the active tab's list locally as the user types.
@@ -99,6 +101,7 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 		lists:  lists,
 		items:  make([][]string, len(tabNames)),
 		values: make([][]string, len(tabNames)),
+		keys:   make([][]string, len(tabNames)),
 		loaded: make([]bool, len(tabNames)),
 		width:  80, height: 24,
 	}
@@ -121,30 +124,32 @@ func waitForStatus(stream <-chan music.Status) tea.Cmd {
 func (m app) loadTab(tab tabID) tea.Cmd {
 	ctx, ctrl := m.ctx, m.ctrl
 	return func() tea.Msg {
-		items, values, err := fetchTab(ctx, ctrl, tab)
-		return tabItemsMsg{tab: tab, items: items, values: values, err: err}
+		items, values, keys, err := fetchTab(ctx, ctrl, tab)
+		return tabItemsMsg{tab: tab, items: items, values: values, keys: keys, err: err}
 	}
 }
 
-// fetchTab returns the display lines and, where applicable, the per-row action
-// targets (playlist/album/artist names). The Queue acts by index, so it has no
-// values.
-func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) (items, values []string, err error) {
+// fetchTab returns the display lines, the per-row action targets (playlist/
+// album/artist names; nil for the Queue, which acts by index), and the per-row
+// filter keys. A key is what `/` matches against and may carry more than the
+// visible line — e.g. a playlist's artists — so filtering by an artist finds
+// playlists that merely contain them.
+func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) (items, values, keys []string, err error) {
 	switch tab {
 	case tabQueue:
 		ts, err := ctrl.Queue(ctx)
-		return trackLines(ts), nil, err
+		return trackLines(ts), nil, trackKeys(ts), err
 	case tabPlaylists:
 		ps, err := ctrl.Playlists(ctx)
-		return playlistLines(ps), playlistNames(ps), err
+		return playlistLines(ps), playlistNames(ps), playlistKeys(ps), err
 	case tabArtists:
 		names, err := ctrl.Artists(ctx)
-		return names, names, err
+		return names, names, lowerAll(names), err
 	case tabAlbums:
-		names, err := ctrl.Albums(ctx)
-		return names, names, err
+		al, err := ctrl.Albums(ctx)
+		return albumLines(al), albumNames(al), albumKeys(al), err
 	default:
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 }
 
@@ -161,6 +166,7 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.items[msg.tab] = msg.items
 			m.values[msg.tab] = msg.values
+			m.keys[msg.tab] = msg.keys
 			m.loaded[msg.tab] = true
 			m.refreshView(msg.tab)
 		}
@@ -329,10 +335,15 @@ func (m *app) applyView() {
 		return
 	}
 
+	keys := m.keys[tab]
 	shown := make([]string, 0, len(full))
 	vm := make([]int, 0, len(full))
 	for i, it := range full {
-		if strings.Contains(strings.ToLower(it), q) {
+		key := strings.ToLower(it)
+		if i < len(keys) {
+			key = keys[i] // artist-aware key (already lowercased)
+		}
+		if strings.Contains(key, q) {
 			shown = append(shown, it)
 			vm = append(vm, i)
 		}
@@ -565,6 +576,66 @@ func playlistNames(ps []music.Playlist) []string {
 		names[i] = p.Name
 	}
 	return names
+}
+
+// playlistKeys builds each playlist's filter key from its name plus the artists
+// it contains, so filtering by an artist surfaces playlists that include them.
+func playlistKeys(ps []music.Playlist) []string {
+	keys := make([]string, len(ps))
+	for i, p := range ps {
+		keys[i] = strings.ToLower(p.Name + " " + strings.Join(p.Artists, " "))
+	}
+	return keys
+}
+
+// albumLines renders "Artist — Album" (just the album when the artist is
+// unknown) so mixed or same-named albums are distinguishable.
+func albumLines(albums []music.Album) []string {
+	lines := make([]string, len(albums))
+	for i, a := range albums {
+		if a.Artist == "" {
+			lines[i] = a.Name
+			continue
+		}
+		lines[i] = a.Artist + " — " + a.Name
+	}
+	return lines
+}
+
+// albumNames returns the album names used as play targets.
+func albumNames(albums []music.Album) []string {
+	names := make([]string, len(albums))
+	for i, a := range albums {
+		names[i] = a.Name
+	}
+	return names
+}
+
+// albumKeys builds each album's filter key from its name and artist.
+func albumKeys(albums []music.Album) []string {
+	keys := make([]string, len(albums))
+	for i, a := range albums {
+		keys[i] = strings.ToLower(a.Name + " " + a.Artist)
+	}
+	return keys
+}
+
+// trackKeys builds each track's filter key from its artist, album, and title.
+func trackKeys(tracks []music.Track) []string {
+	keys := make([]string, len(tracks))
+	for i, t := range tracks {
+		keys[i] = strings.ToLower(t.Artist + " " + t.Album + " " + t.Name)
+	}
+	return keys
+}
+
+// lowerAll returns a lowercased copy of each string, for use as filter keys.
+func lowerAll(ss []string) []string {
+	keys := make([]string, len(ss))
+	for i, s := range ss {
+		keys[i] = strings.ToLower(s)
+	}
+	return keys
 }
 
 func artistTitle(t music.Track) string {

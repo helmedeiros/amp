@@ -28,6 +28,7 @@ type fakePlayer struct {
 	searchResult []music.Track
 	playlists    []music.Playlist
 	names        []string
+	albums       []music.Album
 	positionSet  float64
 	playStart    int
 	playedName   string
@@ -102,9 +103,9 @@ func (f *fakePlayer) Artists(context.Context) ([]string, error) {
 	return f.names, nil
 }
 
-func (f *fakePlayer) Albums(context.Context) ([]string, error) {
+func (f *fakePlayer) Albums(context.Context) ([]music.Album, error) {
 	f.calls = append(f.calls, "Albums")
-	return f.names, nil
+	return f.albums, nil
 }
 func (f *fakePlayer) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
 func (f *fakePlayer) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
@@ -232,7 +233,7 @@ func TestServicePlayQueryPrefersPlaylist(t *testing.T) {
 func TestServicePlayQueryFallsBackToAlbum(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakePlayer{names: []string{"Discovery"}} // no playlist match; albums list
+	fake := &fakePlayer{albums: []music.Album{{Name: "Discovery"}}} // no playlist match; albums list
 	svc := app.NewService(fake, &memStore{})
 
 	res, err := svc.PlayQuery(context.Background(), "discovery", 50)
@@ -344,7 +345,10 @@ func TestServicePlaylistsDelegates(t *testing.T) {
 func TestServiceLibraryBrowsersDelegate(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakePlayer{names: []string{"Daft Punk"}}
+	fake := &fakePlayer{
+		names:  []string{"Daft Punk"},
+		albums: []music.Album{{Name: "Discovery", Artist: "Daft Punk"}},
+	}
 	svc := app.NewService(fake, &memStore{})
 
 	artists, err := svc.Artists(context.Background())
@@ -353,7 +357,7 @@ func TestServiceLibraryBrowsersDelegate(t *testing.T) {
 
 	albums, err := svc.Albums(context.Background())
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Daft Punk"}, albums)
+	assert.Equal(t, []music.Album{{Name: "Discovery", Artist: "Daft Punk"}}, albums)
 
 	assert.Equal(t, []string{"Artists", "Albums"}, fake.calls)
 }

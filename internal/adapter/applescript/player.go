@@ -133,9 +133,14 @@ func (p *Player) Artists(ctx context.Context) ([]string, error) {
 	return p.names(ctx, "artist")
 }
 
-// Albums returns the distinct, sorted album names in the library.
-func (p *Player) Albums(ctx context.Context) ([]string, error) {
-	return p.names(ctx, "album")
+// Albums returns the distinct, sorted albums in the library, each with its
+// artist (or "Various Artists" for mixed albums).
+func (p *Player) Albums(ctx context.Context) ([]music.Album, error) {
+	out, err := p.run.Run(ctx, javaScript, albumsScript)
+	if err != nil {
+		return nil, err
+	}
+	return parseAlbums(out)
 }
 
 func (p *Player) names(ctx context.Context, field string) ([]string, error) {
