@@ -82,6 +82,22 @@ amd &          # start the daemon (Ctrl-C or kill to stop)
 amp status     # now served from the cache (~instant)
 ```
 
+## TUI
+
+`amp tui` opens a full-screen live interface:
+
+- A now-playing header — state, track, progress bar, volume — that updates live
+  from the daemon's event stream (or polls when `amd` isn't running).
+- Tabs: **Queue, Playlists, Artists, Albums, Search** — switch with `Tab` /
+  `Shift-Tab` or number keys `1`–`5`.
+- `j`/`k` move, `Enter` plays the highlighted item, `space` toggles play/pause,
+  `/` types a search query, `r` refreshes, `q` quits.
+
+```sh
+amd &        # optional: event-driven updates
+amp tui
+```
+
 ## Shell completion
 
 `amp` generates completion scripts for bash, zsh, fish, and PowerShell. The zsh
