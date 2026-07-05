@@ -52,6 +52,7 @@ type (
 		err    error
 	}
 	actionDoneMsg    struct{}
+	queuePlayedMsg   struct{}
 	actionErrMsg     struct{ err error }
 	searchResultsMsg struct {
 		items []string
@@ -160,8 +161,14 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case queuePlayedMsg:
+		// A play set the queue to the chosen context; show it.
+		m.active = tabQueue
+		m.loaded[tabQueue] = false
+		return m, m.loadTab(tabQueue)
+
 	case actionDoneMsg:
-		return m, m.loadTab(m.active) // reflect any queue/order change
+		return m, nil
 
 	case actionErrMsg:
 		return m, nil
@@ -259,10 +266,10 @@ func (m app) playSelection() tea.Cmd {
 
 	switch m.active {
 	case tabQueue:
-		return actionCmd(func() error { return m.ctrl.PlayQueueAt(m.ctx, idx) })
+		return queueCmd(func() error { return m.ctrl.PlayQueueAt(m.ctx, idx) })
 	case tabSearch:
 		q := m.searchQuery
-		return actionCmd(func() error { return m.ctrl.PlaySearch(m.ctx, q, searchLimit, idx) })
+		return queueCmd(func() error { return m.ctrl.PlaySearch(m.ctx, q, searchLimit, idx) })
 	}
 
 	vals := m.values[m.active]
@@ -270,18 +277,30 @@ func (m app) playSelection() tea.Cmd {
 		return nil
 	}
 	name := vals[idx]
-	return actionCmd(func() error {
+	return queueCmd(func() error {
 		_, err := m.ctrl.PlayQuery(m.ctx, name, searchLimit)
 		return err
 	})
 }
 
+// actionCmd runs an action that does not change the queue (e.g. play/pause).
 func actionCmd(f func() error) tea.Cmd {
 	return func() tea.Msg {
 		if err := f(); err != nil {
 			return actionErrMsg{err: err}
 		}
 		return actionDoneMsg{}
+	}
+}
+
+// queueCmd runs a play that sets the queue to the selected context; on success
+// the app moves to the Queue tab and refreshes it.
+func queueCmd(f func() error) tea.Cmd {
+	return func() tea.Msg {
+		if err := f(); err != nil {
+			return actionErrMsg{err: err}
+		}
+		return queuePlayedMsg{}
 	}
 }
 
