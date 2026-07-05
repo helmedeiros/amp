@@ -35,9 +35,12 @@ const (
 	tabPlaylists
 	tabArtists
 	tabAlbums
+	tabSearch
 )
 
-var tabNames = []string{"Queue", "Playlists", "Artists", "Albums"}
+var tabNames = []string{"Queue", "Playlists", "Artists", "Albums", "Search"}
+
+const searchLimit = 50
 
 type (
 	statusMsg       music.Status
@@ -48,8 +51,12 @@ type (
 		values []string
 		err    error
 	}
-	actionDoneMsg struct{}
-	actionErrMsg  struct{ err error }
+	actionDoneMsg    struct{}
+	actionErrMsg     struct{ err error }
+	searchResultsMsg struct {
+		items []string
+		err   error
+	}
 )
 
 // app is the root TUI model: a live header plus tabbed list views.
@@ -65,6 +72,9 @@ type app struct {
 	lists  []list
 	values [][]string // per-tab action targets (playlist/album/artist names)
 	loaded []bool
+
+	searchQuery   string
+	searchEditing bool
 
 	width, height int
 	quitting      bool
@@ -144,6 +154,12 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case searchResultsMsg:
+		if msg.err == nil {
+			m.lists[tabSearch].SetItems(msg.items)
+		}
+		return m, nil
+
 	case actionDoneMsg:
 		return m, m.loadTab(m.active) // reflect any queue/order change
 
@@ -162,16 +178,25 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.active == tabSearch && m.searchEditing {
+		return m.handleSearchInput(msg)
+	}
+
+	n := tabID(len(tabNames))
 	switch msg.String() {
 	case "q", "ctrl+c":
 		m.quitting = true
 		return m, tea.Quit
 	case "tab", "l", "right":
-		return m.switchTab((m.active + 1) % tabID(len(tabNames)))
+		return m.switchTab((m.active + 1) % n)
 	case "shift+tab", "h", "left":
-		return m.switchTab((m.active - 1 + tabID(len(tabNames))) % tabID(len(tabNames)))
-	case "1", "2", "3", "4":
+		return m.switchTab((m.active - 1 + n) % n)
+	case "1", "2", "3", "4", "5":
 		return m.switchTab(tabID(msg.String()[0] - '1'))
+	case "/":
+		if m.active == tabSearch {
+			m.searchEditing = true
+		}
 	case "j", "down":
 		m.lists[m.active].MoveDown()
 	case "k", "up":
@@ -181,10 +206,46 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		return m, actionCmd(func() error { return m.ctrl.Toggle(m.ctx) })
 	case "r":
-		m.loaded[m.active] = false
-		return m, m.loadTab(m.active)
+		if m.active != tabSearch {
+			m.loaded[m.active] = false
+			return m, m.loadTab(m.active)
+		}
 	}
 	return m, nil
+}
+
+// handleSearchInput edits the query while the Search tab is in edit mode.
+func (m app) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.searchEditing = false
+		return m, m.runSearch()
+	case tea.KeyEsc:
+		m.searchEditing = false
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyBackspace:
+		if r := []rune(m.searchQuery); len(r) > 0 {
+			m.searchQuery = string(r[:len(r)-1])
+		}
+	case tea.KeySpace:
+		m.searchQuery += " "
+	case tea.KeyRunes:
+		m.searchQuery += string(msg.Runes)
+	}
+	return m, nil
+}
+
+func (m app) runSearch() tea.Cmd {
+	ctx, ctrl, q := m.ctx, m.ctrl, strings.TrimSpace(m.searchQuery)
+	return func() tea.Msg {
+		if q == "" {
+			return searchResultsMsg{}
+		}
+		tracks, err := ctrl.Search(ctx, q, searchLimit)
+		return searchResultsMsg{items: trackLines(tracks), err: err}
+	}
 }
 
 // playSelection plays the highlighted row: a Queue track by index, or a
@@ -196,8 +257,12 @@ func (m app) playSelection() tea.Cmd {
 	}
 	idx := l.Cursor()
 
-	if m.active == tabQueue {
+	switch m.active {
+	case tabQueue:
 		return actionCmd(func() error { return m.ctrl.PlayQueueAt(m.ctx, idx) })
+	case tabSearch:
+		q := m.searchQuery
+		return actionCmd(func() error { return m.ctrl.PlaySearch(m.ctx, q, searchLimit, idx) })
 	}
 
 	vals := m.values[m.active]
@@ -206,7 +271,7 @@ func (m app) playSelection() tea.Cmd {
 	}
 	name := vals[idx]
 	return actionCmd(func() error {
-		_, err := m.ctrl.PlayQuery(m.ctx, name, 50)
+		_, err := m.ctrl.PlayQuery(m.ctx, name, searchLimit)
 		return err
 	})
 }
@@ -222,6 +287,12 @@ func actionCmd(f func() error) tea.Cmd {
 
 func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	m.active = to
+	if to == tabSearch {
+		if m.lists[tabSearch].Len() == 0 {
+			m.searchEditing = true
+		}
+		return m, nil
+	}
 	if !m.loaded[to] {
 		return m, m.loadTab(to)
 	}
@@ -249,10 +320,24 @@ func (m app) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(renderTabBar(m.active))
 	b.WriteString("\n\n")
+	if m.active == tabSearch {
+		b.WriteString(renderSearchPrompt(m.searchQuery, m.searchEditing))
+		b.WriteString("\n\n")
+	}
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("tab/1-4 switch · j/k move · enter play · space pause · r refresh · q quit"))
+	b.WriteString(dimStyle.Render("tab/1-5 switch · j/k move · / search · enter play · space pause · q quit"))
 	return b.String()
+}
+
+func renderSearchPrompt(query string, editing bool) string {
+	if editing {
+		return "search: " + query + "▌"
+	}
+	if query == "" {
+		return dimStyle.Render("search: press / to type a query")
+	}
+	return "search: " + query
 }
 
 func renderTabBar(active tabID) string {
