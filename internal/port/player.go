@@ -18,6 +18,8 @@ type Player interface {
 
 	// Open launches the music application.
 	Open(ctx context.Context) error
+	// SaveArtwork writes the current track's album artwork to path.
+	SaveArtwork(ctx context.Context, path string) error
 
 	// Search returns library tracks matching query, up to limit (<= 0 for all).
 	Search(ctx context.Context, query string, limit int) ([]music.Track, error)

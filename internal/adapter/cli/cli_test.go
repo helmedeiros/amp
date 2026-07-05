@@ -43,6 +43,12 @@ func (f *fakeController) Status(context.Context) (music.Status, error) {
 }
 func (f *fakeController) Open(context.Context) error { f.calls = append(f.calls, "Open"); return nil }
 
+func (f *fakeController) SaveArtwork(_ context.Context, path string) error {
+	f.calls = append(f.calls, "SaveArtwork")
+	f.playQuery = path
+	return nil
+}
+
 func (f *fakeController) PlayQuery(_ context.Context, query string, limit int) (port.PlayResult, error) {
 	f.calls = append(f.calls, "PlayQuery")
 	f.playQuery, f.searchLimit = query, limit
@@ -324,6 +330,17 @@ func TestLibraryAlbumsCommandJSON(t *testing.T) {
 
 	assert.Equal(t, []string{"Albums"}, ctrl.calls)
 	assert.Contains(t, out, `["Discovery"]`)
+}
+
+func TestArtworkCommand(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &fakeController{}
+	out := run(t, ctrl, "artwork", "-o", "art.jpg")
+
+	assert.Equal(t, []string{"SaveArtwork"}, ctrl.calls)
+	assert.Contains(t, ctrl.playQuery, "art.jpg", "path passed through (absolute)")
+	assert.Contains(t, out, "art.jpg")
 }
 
 func TestVersionFlag(t *testing.T) {

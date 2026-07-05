@@ -48,6 +48,12 @@ func (p *Player) Open(ctx context.Context) error {
 	return p.tell(ctx, "activate")
 }
 
+// SaveArtwork writes the current track's album artwork to path.
+func (p *Player) SaveArtwork(ctx context.Context, path string) error {
+	_, err := p.run.Run(ctx, appleScript, saveArtworkScript(path))
+	return err
+}
+
 // Search returns library tracks matching query, up to limit (<= 0 for all).
 func (p *Player) Search(ctx context.Context, query string, limit int) ([]music.Track, error) {
 	out, err := p.run.Run(ctx, javaScript, searchScript(query, limit))

@@ -40,6 +40,12 @@ func (f *fakePlayer) Status(context.Context) (music.Status, error) {
 
 func (f *fakePlayer) Open(context.Context) error { f.calls = append(f.calls, "Open"); return nil }
 
+func (f *fakePlayer) SaveArtwork(_ context.Context, path string) error {
+	f.calls = append(f.calls, "SaveArtwork")
+	f.playedName = path
+	return nil
+}
+
 func (f *fakePlayer) Search(_ context.Context, query string, limit int) ([]music.Track, error) {
 	f.calls = append(f.calls, "Search")
 	f.searchQuery, f.searchLimit = query, limit

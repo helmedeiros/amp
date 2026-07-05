@@ -37,6 +37,14 @@ func (s *Service) Status(ctx context.Context) (music.Status, error) {
 // Open launches the music application.
 func (s *Service) Open(ctx context.Context) error { return s.player.Open(ctx) }
 
+// SaveArtwork writes the current track's album artwork to path.
+func (s *Service) SaveArtwork(ctx context.Context, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("artwork: empty path")
+	}
+	return s.player.SaveArtwork(ctx, path)
+}
+
 // PlayQuery resumes playback when query is empty; otherwise it resolves the
 // query, in order, to a playlist name, an album name (both matched
 // case-insensitively), or a track search, and plays the first that matches.
