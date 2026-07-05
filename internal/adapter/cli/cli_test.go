@@ -61,6 +61,12 @@ func (f *fakeController) PlaySearch(_ context.Context, query string, limit, star
 	return nil
 }
 
+func (f *fakeController) PlayQueueAt(_ context.Context, index int) error {
+	f.calls = append(f.calls, "PlayQueueAt")
+	f.playStart = index
+	return nil
+}
+
 func (f *fakeController) Queue(context.Context) ([]music.Track, error) {
 	f.calls = append(f.calls, "Queue")
 	return f.searchResult, nil

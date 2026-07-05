@@ -43,10 +43,13 @@ type (
 	statusMsg       music.Status
 	streamClosedMsg struct{}
 	tabItemsMsg     struct {
-		tab   tabID
-		items []string
-		err   error
+		tab    tabID
+		items  []string
+		values []string
+		err    error
 	}
+	actionDoneMsg struct{}
+	actionErrMsg  struct{ err error }
 )
 
 // app is the root TUI model: a live header plus tabbed list views.
@@ -60,6 +63,7 @@ type app struct {
 
 	active tabID
 	lists  []list
+	values [][]string // per-tab action targets (playlist/album/artist names)
 	loaded []bool
 
 	width, height int
@@ -73,8 +77,9 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 	}
 	return app{
 		ctx: ctx, ctrl: ctrl, stream: stream,
-		lists: lists, loaded: make([]bool, len(tabNames)),
-		width: 80, height: 24,
+		lists: lists, values: make([][]string, len(tabNames)),
+		loaded: make([]bool, len(tabNames)),
+		width:  80, height: 24,
 	}
 }
 
@@ -95,25 +100,30 @@ func waitForStatus(stream <-chan music.Status) tea.Cmd {
 func (m app) loadTab(tab tabID) tea.Cmd {
 	ctx, ctrl := m.ctx, m.ctrl
 	return func() tea.Msg {
-		items, err := fetchTab(ctx, ctrl, tab)
-		return tabItemsMsg{tab: tab, items: items, err: err}
+		items, values, err := fetchTab(ctx, ctrl, tab)
+		return tabItemsMsg{tab: tab, items: items, values: values, err: err}
 	}
 }
 
-func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) ([]string, error) {
+// fetchTab returns the display lines and, where applicable, the per-row action
+// targets (playlist/album/artist names). The Queue acts by index, so it has no
+// values.
+func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) (items, values []string, err error) {
 	switch tab {
 	case tabQueue:
 		ts, err := ctrl.Queue(ctx)
-		return trackLines(ts), err
+		return trackLines(ts), nil, err
 	case tabPlaylists:
 		ps, err := ctrl.Playlists(ctx)
-		return playlistLines(ps), err
+		return playlistLines(ps), playlistNames(ps), err
 	case tabArtists:
-		return ctrl.Artists(ctx)
+		names, err := ctrl.Artists(ctx)
+		return names, names, err
 	case tabAlbums:
-		return ctrl.Albums(ctx)
+		names, err := ctrl.Albums(ctx)
+		return names, names, err
 	default:
-		return nil, nil
+		return nil, nil, nil
 	}
 }
 
@@ -129,8 +139,15 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tabItemsMsg:
 		if msg.err == nil {
 			m.lists[msg.tab].SetItems(msg.items)
+			m.values[msg.tab] = msg.values
 			m.loaded[msg.tab] = true
 		}
+		return m, nil
+
+	case actionDoneMsg:
+		return m, m.loadTab(m.active) // reflect any queue/order change
+
+	case actionErrMsg:
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -159,11 +176,48 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lists[m.active].MoveDown()
 	case "k", "up":
 		m.lists[m.active].MoveUp()
+	case "enter":
+		return m, m.playSelection()
+	case " ":
+		return m, actionCmd(func() error { return m.ctrl.Toggle(m.ctx) })
 	case "r":
 		m.loaded[m.active] = false
 		return m, m.loadTab(m.active)
 	}
 	return m, nil
+}
+
+// playSelection plays the highlighted row: a Queue track by index, or a
+// playlist/album/artist by name (routed through the smart play resolver).
+func (m app) playSelection() tea.Cmd {
+	l := &m.lists[m.active]
+	if l.Len() == 0 {
+		return nil
+	}
+	idx := l.Cursor()
+
+	if m.active == tabQueue {
+		return actionCmd(func() error { return m.ctrl.PlayQueueAt(m.ctx, idx) })
+	}
+
+	vals := m.values[m.active]
+	if idx >= len(vals) {
+		return nil
+	}
+	name := vals[idx]
+	return actionCmd(func() error {
+		_, err := m.ctrl.PlayQuery(m.ctx, name, 50)
+		return err
+	})
+}
+
+func actionCmd(f func() error) tea.Cmd {
+	return func() tea.Msg {
+		if err := f(); err != nil {
+			return actionErrMsg{err: err}
+		}
+		return actionDoneMsg{}
+	}
 }
 
 func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
@@ -197,7 +251,7 @@ func (m app) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("tab/1-4 switch · j/k move · r refresh · q quit"))
+	b.WriteString(dimStyle.Render("tab/1-4 switch · j/k move · enter play · space pause · r refresh · q quit"))
 	return b.String()
 }
 
@@ -263,6 +317,14 @@ func playlistLines(ps []music.Playlist) []string {
 		lines[i] = fmt.Sprintf("%s  (%d)", p.Name, p.Count)
 	}
 	return lines
+}
+
+func playlistNames(ps []music.Playlist) []string {
+	names := make([]string, len(ps))
+	for i, p := range ps {
+		names[i] = p.Name
+	}
+	return names
 }
 
 func artistTitle(t music.Track) string {

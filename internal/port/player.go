@@ -28,6 +28,8 @@ type Player interface {
 	PlayPlaylist(ctx context.Context, name string) error
 	// PlayAlbum loads the named album into the queue in track order and plays it.
 	PlayAlbum(ctx context.Context, name string) error
+	// PlayQueueAt plays the queue starting at the given index.
+	PlayQueueAt(ctx context.Context, index int) error
 	// Queue returns the tracks currently in the queue.
 	Queue(ctx context.Context) ([]music.Track, error)
 	// QueueAdd appends the search results to the queue and returns how many were

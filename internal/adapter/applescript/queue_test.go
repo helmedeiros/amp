@@ -42,6 +42,10 @@ func TestQueueScripts(t *testing.T) {
 	assert.Contains(t, queueTracksScript(), `Music.userPlaylists.byName("amp queue")`)
 	assert.Contains(t, queueClearScript(), "Music.delete(pl.tracks)")
 
+	at := playQueueAtScript(3)
+	assert.Contains(t, at, "(((3) % n)")
+	assert.Contains(t, at, "pl.play();")
+
 	add := queueAddScript(`green "day"`, 30)
 	assert.Contains(t, add, `{for: "green \"day\"", only: 'all'}`)
 	assert.Contains(t, add, "const limit = 30;")

@@ -13,21 +13,42 @@ import (
 	"github.com/helmedeiros/amp/internal/port"
 )
 
-// stubController implements only the list-fetching methods the app uses.
+// stubController implements the methods the app uses and records actions.
 type stubController struct {
 	port.Controller
 	queue     []music.Track
 	playlists []music.Playlist
 	artists   []string
 	albums    []string
+
+	calls      []string
+	playedName string
+	playedIdx  int
 }
 
-func (s stubController) Queue(context.Context) ([]music.Track, error) { return s.queue, nil }
-func (s stubController) Playlists(context.Context) ([]music.Playlist, error) {
+func (s *stubController) Queue(context.Context) ([]music.Track, error) { return s.queue, nil }
+func (s *stubController) Playlists(context.Context) ([]music.Playlist, error) {
 	return s.playlists, nil
 }
-func (s stubController) Artists(context.Context) ([]string, error) { return s.artists, nil }
-func (s stubController) Albums(context.Context) ([]string, error)  { return s.albums, nil }
+func (s *stubController) Artists(context.Context) ([]string, error) { return s.artists, nil }
+func (s *stubController) Albums(context.Context) ([]string, error)  { return s.albums, nil }
+
+func (s *stubController) PlayQueueAt(_ context.Context, index int) error {
+	s.calls = append(s.calls, "PlayQueueAt")
+	s.playedIdx = index
+	return nil
+}
+
+func (s *stubController) PlayQuery(_ context.Context, query string, _ int) (port.PlayResult, error) {
+	s.calls = append(s.calls, "PlayQuery")
+	s.playedName = query
+	return port.PlayResult{}, nil
+}
+
+func (s *stubController) Toggle(context.Context) error {
+	s.calls = append(s.calls, "Toggle")
+	return nil
+}
 
 func playingStatus() music.Status {
 	return music.Status{
@@ -45,30 +66,75 @@ func newTestApp(ctrl port.Controller) app {
 func TestFetchTab(t *testing.T) {
 	t.Parallel()
 
-	ctrl := stubController{
+	ctrl := &stubController{
 		queue:     []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}},
 		playlists: []music.Playlist{{Name: "Chill", Count: 42}},
 		artists:   []string{"Daft Punk"},
 		albums:    []string{"Discovery"},
 	}
 
-	q, _ := fetchTab(context.Background(), ctrl, tabQueue)
+	q, _, _ := fetchTab(context.Background(), ctrl, tabQueue)
 	assert.Equal(t, []string{"Utsu-P — Gorgon"}, q)
 
-	p, _ := fetchTab(context.Background(), ctrl, tabPlaylists)
+	p, pv, _ := fetchTab(context.Background(), ctrl, tabPlaylists)
 	assert.Equal(t, []string{"Chill  (42)"}, p)
+	assert.Equal(t, []string{"Chill"}, pv, "playlist action value is the name")
 
-	a, _ := fetchTab(context.Background(), ctrl, tabArtists)
+	a, av, _ := fetchTab(context.Background(), ctrl, tabArtists)
 	assert.Equal(t, []string{"Daft Punk"}, a)
+	assert.Equal(t, []string{"Daft Punk"}, av)
 
-	al, _ := fetchTab(context.Background(), ctrl, tabAlbums)
+	al, _, _ := fetchTab(context.Background(), ctrl, tabAlbums)
 	assert.Equal(t, []string{"Discovery"}, al)
+}
+
+func TestAppEnterPlaysQueueByIndex(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := newTestApp(ctrl)
+	next, _ := m.Update(tabItemsMsg{tab: tabQueue, items: []string{"a", "b", "c"}})
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // cursor 1
+	m = next.(app)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	assert.IsType(t, actionDoneMsg{}, cmd())
+	assert.Equal(t, []string{"PlayQueueAt"}, ctrl.calls)
+	assert.Equal(t, 1, ctrl.playedIdx)
+}
+
+func TestAppEnterPlaysArtistByName(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := newTestApp(ctrl)
+	m.active = tabArtists
+	next, _ := m.Update(tabItemsMsg{tab: tabArtists, items: []string{"Daft Punk"}, values: []string{"Daft Punk"}})
+	m = next.(app)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"PlayQuery"}, ctrl.calls)
+	assert.Equal(t, "Daft Punk", ctrl.playedName)
+}
+
+func TestAppSpaceToggles(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	_, cmd := newTestApp(ctrl).Update(tea.KeyMsg{Type: tea.KeySpace})
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"Toggle"}, ctrl.calls)
 }
 
 func TestAppHeaderUpdatesFromStatus(t *testing.T) {
 	t.Parallel()
 
-	next, _ := newTestApp(stubController{}).Update(statusMsg(playingStatus()))
+	next, _ := newTestApp(&stubController{}).Update(statusMsg(playingStatus()))
 	view := next.(app).View()
 
 	assert.Contains(t, view, "PLAYING")
@@ -80,7 +146,7 @@ func TestAppHeaderUpdatesFromStatus(t *testing.T) {
 func TestAppShowsTabItems(t *testing.T) {
 	t.Parallel()
 
-	m := newTestApp(stubController{})
+	m := newTestApp(&stubController{})
 	next, _ := m.Update(tabItemsMsg{tab: tabQueue, items: []string{"Utsu-P — Gorgon", "Utsu-P — Vulgar"}})
 	view := next.(app).View()
 
@@ -92,7 +158,7 @@ func TestAppShowsTabItems(t *testing.T) {
 func TestAppSwitchesTabsAndLoads(t *testing.T) {
 	t.Parallel()
 
-	m := newTestApp(stubController{})
+	m := newTestApp(&stubController{})
 
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
 	m = next.(app)
@@ -105,7 +171,7 @@ func TestAppSwitchesTabsAndLoads(t *testing.T) {
 func TestAppListNavigation(t *testing.T) {
 	t.Parallel()
 
-	m := newTestApp(stubController{})
+	m := newTestApp(&stubController{})
 	next, _ := m.Update(tabItemsMsg{tab: tabQueue, items: []string{"a", "b", "c"}})
 	m = next.(app)
 
@@ -120,7 +186,7 @@ func TestAppListNavigation(t *testing.T) {
 func TestAppQuits(t *testing.T) {
 	t.Parallel()
 
-	next, cmd := newTestApp(stubController{}).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	next, cmd := newTestApp(&stubController{}).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	assert.True(t, next.(app).quitting)
 	assert.NotNil(t, cmd)
 }
