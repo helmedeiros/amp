@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-05
+
+### Changed
+
+- Every play now sets the queue to the selected context. Playing a **playlist**,
+  **album**, **artist**, or **search** result loads those tracks into the
+  `amp queue` (a fast bulk copy — ~0.65s for 1000+ tracks) and plays from the
+  top, so the queue always reflects what's playing. In the TUI, any play jumps
+  to the **Queue** tab and refreshes it, making the queue the single window into
+  the current context.
+
 ## [0.3.1] - 2026-07-05
 
 ### Fixed
@@ -63,6 +74,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.4.0]: https://github.com/helmedeiros/amp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/helmedeiros/amp/releases/tag/v0.3.1
 [0.3.0]: https://github.com/helmedeiros/amp/releases/tag/v0.3.0
 [0.2.0]: https://github.com/helmedeiros/amp/releases/tag/v0.2.0
