@@ -57,7 +57,6 @@ type (
 		items []string
 		err   error
 	}
-	artMsg struct{ escape string }
 )
 
 // app is the root TUI model: a live header plus tabbed list views.
@@ -76,9 +75,6 @@ type app struct {
 
 	searchQuery   string
 	searchEditing bool
-
-	art      string // Kitty escape for the current artwork, when supported
-	trackKey string // detects track changes to refetch art
 
 	width, height int
 	quitting      bool
@@ -144,24 +140,8 @@ func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) (items, valu
 func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
-		s := music.Status(msg)
-		prev := m.trackKey
-		m.status, m.hasStatus = s, true
-		m.trackKey = trackKeyOf(s)
-
-		cmds := []tea.Cmd{waitForStatus(m.stream)}
-		if m.trackKey != prev {
-			if m.trackKey == "" {
-				m.art = ""
-			} else if c := m.fetchArt(); c != nil {
-				cmds = append(cmds, c)
-			}
-		}
-		return m, tea.Batch(cmds...)
-
-	case artMsg:
-		m.art = msg.escape
-		return m, nil
+		m.status, m.hasStatus = music.Status(msg), true
+		return m, waitForStatus(m.stream)
 
 	case streamClosedMsg:
 		return m, nil // header stops updating; the TUI stays usable
@@ -257,33 +237,6 @@ func (m app) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// trackKeyOf identifies a track for change detection (empty when none).
-func trackKeyOf(s music.Status) string {
-	if !s.HasTrack() {
-		return ""
-	}
-	return s.Track.Artist + "\x00" + s.Track.Name + "\x00" + s.Track.Album
-}
-
-// fetchArt loads the current artwork and encodes it for Kitty, when supported.
-func (m app) fetchArt() tea.Cmd {
-	if !kittySupported() {
-		return nil
-	}
-	ctx, ctrl := m.ctx, m.ctrl
-	return func() tea.Msg {
-		data, err := ctrl.Artwork(ctx)
-		if err != nil || len(data) == 0 {
-			return artMsg{}
-		}
-		esc, err := encodeKittyImage(data, artCols, artRows)
-		if err != nil {
-			return artMsg{}
-		}
-		return artMsg{escape: esc}
-	}
-}
-
 func (m app) runSearch() tea.Cmd {
 	ctx, ctrl, q := m.ctx, m.ctrl, strings.TrimSpace(m.searchQuery)
 	return func() tea.Msg {
@@ -363,11 +316,6 @@ func (m app) View() string {
 	}
 
 	var b strings.Builder
-	if m.art != "" {
-		// Display the image at the top, then move the cursor below it.
-		b.WriteString(m.art)
-		b.WriteString(strings.Repeat("\n", artRows))
-	}
 	b.WriteString(renderHeader(m.status, m.hasStatus))
 	b.WriteString("\n\n")
 	b.WriteString(renderTabBar(m.active))

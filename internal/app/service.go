@@ -45,11 +45,6 @@ func (s *Service) SaveArtwork(ctx context.Context, path string) error {
 	return s.player.SaveArtwork(ctx, path)
 }
 
-// Artwork returns the current track's album artwork bytes.
-func (s *Service) Artwork(ctx context.Context) ([]byte, error) {
-	return s.player.Artwork(ctx)
-}
-
 // PlayQuery resumes playback when query is empty; otherwise it resolves the
 // query, in order, to a playlist name, an album name (both matched
 // case-insensitively), or a track search, and plays the first that matches.
