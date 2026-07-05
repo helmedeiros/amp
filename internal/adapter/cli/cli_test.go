@@ -49,6 +49,11 @@ func (f *fakeController) SaveArtwork(_ context.Context, path string) error {
 	return nil
 }
 
+func (f *fakeController) Artwork(context.Context) ([]byte, error) {
+	f.calls = append(f.calls, "Artwork")
+	return nil, nil
+}
+
 func (f *fakeController) PlayQuery(_ context.Context, query string, limit int) (port.PlayResult, error) {
 	f.calls = append(f.calls, "PlayQuery")
 	f.playQuery, f.searchLimit = query, limit
