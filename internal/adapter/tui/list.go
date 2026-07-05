@@ -46,6 +46,12 @@ func (l *list) MoveDown() {
 	}
 }
 
+// Top moves the cursor and viewport back to the first item.
+func (l *list) Top() {
+	l.cursor = 0
+	l.offset = 0
+}
+
 // Cursor returns the selected index (0 when empty).
 func (l *list) Cursor() int { return l.cursor }
 
