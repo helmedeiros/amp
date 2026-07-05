@@ -140,6 +140,115 @@ func TestAppPlayJumpsToQueueTab(t *testing.T) {
 	assert.IsType(t, tabItemsMsg{}, reload())
 }
 
+func TestAppSlashFiltersTabAndPlaysMappedItem(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := newTestApp(ctrl)
+	m.active = tabArtists
+	next, _ := m.Update(tabItemsMsg{
+		tab:    tabArtists,
+		items:  []string{"Daft Punk", "Justice", "Daft Hands"},
+		values: []string{"Daft Punk", "Justice", "Daft Hands"},
+	})
+	m = next.(app)
+
+	// / starts a filter on a non-Search tab; typing narrows the list.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	require.True(t, m.filtering)
+	for _, r := range "hands" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+	assert.Equal(t, 1, m.lists[tabArtists].Len(), "only matching rows remain")
+	view := m.View()
+	assert.Contains(t, view, "Daft Hands")
+	assert.NotContains(t, view, "Justice")
+
+	// Enter keeps the filtered view and leaves edit mode.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(app)
+	assert.False(t, m.filtering)
+
+	// Playing the highlighted row plays the ORIGINAL item, not the filtered index.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"PlayQuery"}, ctrl.calls)
+	assert.Equal(t, "Daft Hands", ctrl.playedName)
+}
+
+func TestAppFilterQueuePlaysMappedIndex(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := newTestApp(ctrl) // Queue is the default active tab
+	next, _ := m.Update(tabItemsMsg{tab: tabQueue, items: []string{"A song", "B song", "C tune"}})
+	m = next.(app)
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	for _, r := range "tune" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // keep filter
+	m = next.(app)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // play highlighted
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"PlayQueueAt"}, ctrl.calls)
+	assert.Equal(t, 2, ctrl.playedIdx, `"C tune" is index 2 in the full queue`)
+}
+
+func TestAppEscClearsFilter(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	m.active = tabArtists
+	next, _ := m.Update(tabItemsMsg{tab: tabArtists, items: []string{"Daft Punk", "Justice"}, values: []string{"Daft Punk", "Justice"}})
+	m = next.(app)
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	for _, r := range "daft" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+	assert.Equal(t, 1, m.lists[tabArtists].Len())
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc}) // esc while typing clears
+	m = next.(app)
+	assert.False(t, m.filtering)
+	assert.Equal(t, "", m.filterQuery)
+	assert.Equal(t, 2, m.lists[tabArtists].Len(), "full list restored")
+}
+
+func TestAppSwitchTabClearsFilter(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	next, _ := m.Update(tabItemsMsg{tab: tabQueue, items: []string{"A song", "B tune"}})
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	m = next.(app)
+	require.Equal(t, 1, m.lists[tabQueue].Len())
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // keep filter, exit editing
+	m = next.(app)
+
+	// Switch away and back: the filter is gone and the full list is shown.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")}) // Playlists
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")}) // back to Queue
+	m = next.(app)
+	assert.Equal(t, "", m.filterQuery)
+	assert.Equal(t, 2, m.lists[tabQueue].Len(), "full queue restored after switching tabs")
+}
+
 func TestAppEnterPlaysArtistByName(t *testing.T) {
 	t.Parallel()
 

@@ -71,8 +71,16 @@ type app struct {
 
 	active tabID
 	lists  []list
+	items  [][]string // per-tab full display lines (source for filtering)
 	values [][]string // per-tab action targets (playlist/album/artist names)
 	loaded []bool
+
+	// filtering narrows the active tab's list locally as the user types.
+	// viewMap maps each visible row back to its index in the full items slice
+	// (nil = identity) so a play on a filtered row still hits the right track.
+	filtering   bool
+	filterQuery string
+	viewMap     []int
 
 	searchQuery   string
 	searchEditing bool
@@ -88,7 +96,9 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 	}
 	return app{
 		ctx: ctx, ctrl: ctrl, stream: stream,
-		lists: lists, values: make([][]string, len(tabNames)),
+		lists:  lists,
+		items:  make([][]string, len(tabNames)),
+		values: make([][]string, len(tabNames)),
 		loaded: make([]bool, len(tabNames)),
 		width:  80, height: 24,
 	}
@@ -149,14 +159,16 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabItemsMsg:
 		if msg.err == nil {
-			m.lists[msg.tab].SetItems(msg.items)
+			m.items[msg.tab] = msg.items
 			m.values[msg.tab] = msg.values
 			m.loaded[msg.tab] = true
+			m.refreshView(msg.tab)
 		}
 		return m, nil
 
 	case searchResultsMsg:
 		if msg.err == nil {
+			m.items[tabSearch] = msg.items
 			m.lists[tabSearch].SetItems(msg.items)
 		}
 		return m, nil
@@ -164,6 +176,7 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case queuePlayedMsg:
 		// A play set the queue to the chosen context; show it.
 		m.active = tabQueue
+		m.clearFilter()
 		m.loaded[tabQueue] = false
 		return m, m.loadTab(tabQueue)
 
@@ -188,6 +201,9 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.active == tabSearch && m.searchEditing {
 		return m.handleSearchInput(msg)
 	}
+	if m.filtering {
+		return m.handleFilterInput(msg)
+	}
 
 	n := tabID(len(tabNames))
 	switch msg.String() {
@@ -203,6 +219,14 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		if m.active == tabSearch {
 			m.searchEditing = true
+		} else {
+			m.filtering = true
+			m.filterQuery = ""
+			m.applyView()
+		}
+	case "esc":
+		if m.active != tabSearch && m.filterQuery != "" {
+			m.clearFilter()
 		}
 	case "j", "down":
 		m.lists[m.active].MoveDown()
@@ -244,6 +268,88 @@ func (m app) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// handleFilterInput narrows the active tab's list as the user types. Enter
+// keeps the narrowed list and returns to navigation (so j/k/enter act on the
+// filtered rows); Esc clears the filter and restores the full list.
+func (m app) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.filtering = false
+		return m, nil
+	case tea.KeyEsc:
+		m.clearFilter()
+		return m, nil
+	case tea.KeyCtrlC:
+		m.quitting = true
+		return m, tea.Quit
+	case tea.KeyBackspace:
+		if r := []rune(m.filterQuery); len(r) > 0 {
+			m.filterQuery = string(r[:len(r)-1])
+		}
+		m.applyView()
+	case tea.KeySpace:
+		m.filterQuery += " "
+		m.applyView()
+	case tea.KeyRunes:
+		m.filterQuery += string(msg.Runes)
+		m.applyView()
+	}
+	return m, nil
+}
+
+// clearFilter drops the active filter and restores the full list.
+func (m *app) clearFilter() {
+	m.filtering = false
+	m.filterQuery = ""
+	m.viewMap = nil
+	m.applyView()
+}
+
+// refreshView updates a tab's visible list from its full items, applying the
+// active filter when it is the tab on screen.
+func (m *app) refreshView(tab tabID) {
+	if tab == m.active {
+		m.applyView()
+		return
+	}
+	m.lists[tab].SetItems(m.items[tab])
+}
+
+// applyView sets the active tab's visible rows from its full items, narrowing to
+// the filter query (case-insensitive substring) when one is set. viewMap records
+// the original index of each visible row so a play maps back correctly. The
+// Search tab is never filtered locally (it searches the library instead).
+func (m *app) applyView() {
+	tab := m.active
+	full := m.items[tab]
+	q := strings.ToLower(strings.TrimSpace(m.filterQuery))
+	if q == "" || tab == tabSearch {
+		m.viewMap = nil
+		m.lists[tab].SetItems(full)
+		return
+	}
+
+	shown := make([]string, 0, len(full))
+	vm := make([]int, 0, len(full))
+	for i, it := range full {
+		if strings.Contains(strings.ToLower(it), q) {
+			shown = append(shown, it)
+			vm = append(vm, i)
+		}
+	}
+	m.viewMap = vm
+	m.lists[tab].SetItems(shown)
+	m.lists[tab].Top()
+}
+
+// orig maps a visible row index to its index in the full item slice.
+func (m app) orig(i int) int {
+	if m.viewMap == nil || i < 0 || i >= len(m.viewMap) {
+		return i
+	}
+	return m.viewMap[i]
+}
+
 func (m app) runSearch() tea.Cmd {
 	ctx, ctrl, q := m.ctx, m.ctrl, strings.TrimSpace(m.searchQuery)
 	return func() tea.Msg {
@@ -262,7 +368,7 @@ func (m app) playSelection() tea.Cmd {
 	if l.Len() == 0 {
 		return nil
 	}
-	idx := l.Cursor()
+	idx := m.orig(l.Cursor())
 
 	switch m.active {
 	case tabQueue:
@@ -306,6 +412,9 @@ func queueCmd(f func() error) tea.Cmd {
 
 func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	m.active = to
+	m.filtering = false
+	m.filterQuery = ""
+	m.viewMap = nil
 	if to == tabSearch {
 		// Land in navigation mode so number keys still switch tabs; press / to
 		// start typing a query.
@@ -314,6 +423,7 @@ func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	if !m.loaded[to] {
 		return m, m.loadTab(to)
 	}
+	m.lists[to].SetItems(m.items[to]) // clear any lingering filter view
 	return m, nil
 }
 
@@ -341,6 +451,9 @@ func (m app) View() string {
 	if m.active == tabSearch {
 		b.WriteString(renderSearchPrompt(m.searchQuery, m.searchEditing))
 		b.WriteString("\n\n")
+	} else if m.filtering || m.filterQuery != "" {
+		b.WriteString(renderFilterPrompt(m.filterQuery, m.filtering))
+		b.WriteString("\n\n")
 	}
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
@@ -352,7 +465,24 @@ func (m app) hint() string {
 	if m.active == tabSearch && m.searchEditing {
 		return "type a query · enter search · esc cancel"
 	}
-	return "tab/1-5 switch · j/k move · / search · enter play · space pause · q quit"
+	if m.filtering {
+		return "type to filter · enter keep · esc clear"
+	}
+	if m.filterQuery != "" {
+		return "filtered · esc clear · j/k move · enter play · / refine"
+	}
+	find := "filter"
+	if m.active == tabSearch {
+		find = "search"
+	}
+	return "tab/1-5 switch · j/k move · / " + find + " · enter play · space pause · q quit"
+}
+
+func renderFilterPrompt(query string, editing bool) string {
+	if editing {
+		return "filter: " + query + "▌"
+	}
+	return "filter: " + query + dimStyle.Render("  (esc clear)")
 }
 
 func renderSearchPrompt(query string, editing bool) string {

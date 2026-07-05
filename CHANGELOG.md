@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **TUI: filter within a tab.** On the Queue, Playlists, Artists, and Albums
+  tabs, press `/` to filter the loaded list live (case-insensitive substring).
+  `Enter` keeps the narrowed list and returns to navigation (`j`/`k` move,
+  `Enter` plays — the highlighted row maps back to its real position); `Esc`
+  clears the filter. The Search tab keeps its library-wide search.
+
 ## [0.4.0] - 2026-07-05
 
 ### Changed
