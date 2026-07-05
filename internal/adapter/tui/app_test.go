@@ -21,6 +21,8 @@ type stubController struct {
 	artists   []string
 	albums    []string
 
+	searchResult []music.Track
+
 	calls      []string
 	playedName string
 	playedIdx  int
@@ -47,6 +49,18 @@ func (s *stubController) PlayQuery(_ context.Context, query string, _ int) (port
 
 func (s *stubController) Toggle(context.Context) error {
 	s.calls = append(s.calls, "Toggle")
+	return nil
+}
+
+func (s *stubController) Search(_ context.Context, query string, _ int) ([]music.Track, error) {
+	s.calls = append(s.calls, "Search")
+	s.playedName = query
+	return s.searchResult, nil
+}
+
+func (s *stubController) PlaySearch(_ context.Context, query string, _, index int) error {
+	s.calls = append(s.calls, "PlaySearch")
+	s.playedName, s.playedIdx = query, index
 	return nil
 }
 
@@ -119,6 +133,70 @@ func TestAppEnterPlaysArtistByName(t *testing.T) {
 	cmd()
 	assert.Equal(t, []string{"PlayQuery"}, ctrl.calls)
 	assert.Equal(t, "Daft Punk", ctrl.playedName)
+}
+
+func TestAppSearchTabEntersEditMode(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")}) // switch to Search
+	m = next.(app)
+
+	assert.Equal(t, tabSearch, m.active)
+	assert.True(t, m.searchEditing, "the Search tab starts in edit mode when empty")
+	assert.Contains(t, m.View(), "search:")
+}
+
+func TestAppSearchTypeAndSubmit(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{searchResult: []music.Track{{Name: "Gorgon", Artist: "Utsu-P"}}}
+	m := newTestApp(ctrl)
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
+	m = next.(app)
+
+	// type "utsu"
+	for _, r := range "utsu" {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = next.(app)
+	}
+	assert.Equal(t, "utsu", m.searchQuery)
+
+	// submit
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(app)
+	assert.False(t, m.searchEditing, "enter leaves edit mode")
+	require.NotNil(t, cmd)
+
+	// the search command populates the results
+	res := cmd().(searchResultsMsg)
+	assert.Equal(t, []string{"Utsu-P — Gorgon"}, res.items)
+	assert.Equal(t, "utsu", ctrl.playedName)
+
+	next, _ = m.Update(res)
+	m = next.(app)
+	assert.Contains(t, m.View(), "Utsu-P — Gorgon")
+}
+
+func TestAppSearchResultEnterPlaysByIndex(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := newTestApp(ctrl)
+	m.active = tabSearch
+	m.searchQuery = "utsu"
+	next, _ := m.Update(searchResultsMsg{items: []string{"a", "b", "c"}})
+	m = next.(app)
+	// not editing anymore; move and play
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	m = next.(app)
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	cmd()
+	assert.Equal(t, []string{"PlaySearch"}, ctrl.calls)
+	assert.Equal(t, "utsu", ctrl.playedName)
+	assert.Equal(t, 1, ctrl.playedIdx)
 }
 
 func TestAppSpaceToggles(t *testing.T) {
