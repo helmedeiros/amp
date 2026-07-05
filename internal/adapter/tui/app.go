@@ -288,9 +288,8 @@ func actionCmd(f func() error) tea.Cmd {
 func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	m.active = to
 	if to == tabSearch {
-		if m.lists[tabSearch].Len() == 0 {
-			m.searchEditing = true
-		}
+		// Land in navigation mode so number keys still switch tabs; press / to
+		// start typing a query.
 		return m, nil
 	}
 	if !m.loaded[to] {
@@ -326,8 +325,15 @@ func (m app) View() string {
 	}
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("tab/1-5 switch · j/k move · / search · enter play · space pause · q quit"))
+	b.WriteString(dimStyle.Render(m.hint()))
 	return b.String()
+}
+
+func (m app) hint() string {
+	if m.active == tabSearch && m.searchEditing {
+		return "type a query · enter search · esc cancel"
+	}
+	return "tab/1-5 switch · j/k move · / search · enter play · space pause · q quit"
 }
 
 func renderSearchPrompt(query string, editing bool) string {
