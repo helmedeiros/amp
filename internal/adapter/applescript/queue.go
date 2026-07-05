@@ -85,13 +85,21 @@ JSON.stringify({cleared: true});
 `, qn)
 }
 
-// playPlaylistScript plays a named user playlist.
+// playPlaylistScript loads the named user playlist's tracks into the managed
+// queue (a fast bulk duplicate) and plays it from the top, so the queue always
+// reflects what is playing.
 func playPlaylistScript(name string) string {
 	n, _ := json.Marshal(name)
+	qn, _ := json.Marshal(queuePlaylistName)
 	return fmt.Sprintf(`
 const Music = Application('Music');
-Music.userPlaylists.byName(%s).play();
-`, n)
+const src = Music.userPlaylists.byName(%s);
+let pl;
+try { pl = Music.userPlaylists.byName(%s); pl.name(); Music.delete(pl.tracks); }
+catch (e) { pl = Music.make({new: 'playlist', withProperties: {name: %s}}); }
+Music.duplicate(src.tracks, {to: pl});
+pl.play();
+`, n, qn, qn)
 }
 
 // playAlbumScript loads the named album into the queue in track order and plays

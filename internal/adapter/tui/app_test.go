@@ -114,9 +114,30 @@ func TestAppEnterPlaysQueueByIndex(t *testing.T) {
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	require.NotNil(t, cmd)
-	assert.IsType(t, actionDoneMsg{}, cmd())
+	assert.IsType(t, queuePlayedMsg{}, cmd())
 	assert.Equal(t, []string{"PlayQueueAt"}, ctrl.calls)
 	assert.Equal(t, 1, ctrl.playedIdx)
+}
+
+func TestAppPlayJumpsToQueueTab(t *testing.T) {
+	t.Parallel()
+
+	// Play a playlist from the Playlists tab...
+	ctrl := &stubController{}
+	m := newTestApp(ctrl)
+	m.active = tabPlaylists
+	next, _ := m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"Chill  (42)"}, values: []string{"Chill"}})
+	m = next.(app)
+
+	// Enter yields a queuePlayedMsg; handling it moves to the Queue tab.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	require.NotNil(t, cmd)
+	next, reload := m.Update(cmd())
+	m = next.(app)
+
+	assert.Equal(t, tabQueue, m.active, "a play jumps to the Queue tab")
+	require.NotNil(t, reload, "and refreshes the queue")
+	assert.IsType(t, tabItemsMsg{}, reload())
 }
 
 func TestAppEnterPlaysArtistByName(t *testing.T) {

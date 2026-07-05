@@ -75,8 +75,12 @@ func TestPlayerQueueOps(t *testing.T) {
 func TestPlayPlaylistScript(t *testing.T) {
 	t.Parallel()
 
-	assert.Contains(t, playPlaylistScript(`My "Chill"`),
-		`Music.userPlaylists.byName("My \"Chill\"").play();`)
+	script := playPlaylistScript(`My "Chill"`)
+
+	assert.Contains(t, script, `const src = Music.userPlaylists.byName("My \"Chill\"");`)
+	assert.Contains(t, script, `Music.userPlaylists.byName("amp queue")`)
+	assert.Contains(t, script, "Music.duplicate(src.tracks, {to: pl})") // bulk copy
+	assert.Contains(t, script, "pl.play();")
 }
 
 func TestPlayAlbumScript(t *testing.T) {
