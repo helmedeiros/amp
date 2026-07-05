@@ -175,7 +175,9 @@ func playCompletions(ctrl port.Controller) func(*cobra.Command, []string, string
 			}
 		}
 		if albums, err := ctrl.Albums(cmd.Context()); err == nil {
-			names = append(names, albums...)
+			for _, a := range albums {
+				names = append(names, a.Name)
+			}
 		}
 
 		lower := strings.ToLower(toComplete)
@@ -256,8 +258,31 @@ func libraryCmd(ctrl port.Controller) *cobra.Command {
 	}
 	cmd.AddCommand(
 		namesSubcmd("artists", "List all artists", ctrl.Artists),
-		namesSubcmd("albums", "List all albums", ctrl.Albums),
+		albumsSubcmd(ctrl),
 	)
+	return cmd
+}
+
+// albumsSubcmd builds `library albums`, printing "Artist — Album" per line (or
+// a JSON array of {name, artist} with --json).
+func albumsSubcmd(ctrl port.Controller) *cobra.Command {
+	var asJSON bool
+
+	cmd := &cobra.Command{
+		Use:   "albums",
+		Short: "List all albums",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			albums, err := ctrl.Albums(cmd.Context())
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), RenderAlbums(albums, asJSON))
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "output machine-readable JSON")
+
 	return cmd
 }
 

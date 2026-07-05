@@ -44,8 +44,9 @@ type Controller interface {
 	Playlists(ctx context.Context) ([]music.Playlist, error)
 	// Artists returns the distinct, sorted artist names in the library.
 	Artists(ctx context.Context) ([]string, error)
-	// Albums returns the distinct, sorted album names in the library.
-	Albums(ctx context.Context) ([]string, error)
+	// Albums returns the distinct, sorted albums in the library, each with its
+	// artist (or "Various Artists" when the album's tracks disagree).
+	Albums(ctx context.Context) ([]music.Album, error)
 
 	Play(ctx context.Context) error
 	Pause(ctx context.Context) error

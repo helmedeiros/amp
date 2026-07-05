@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ type fakeController struct {
 	searchResult []music.Track
 	playlists    []music.Playlist
 	names        []string
+	albums       []music.Album
 	seekMode     music.SeekMode
 	seekValue    float64
 	seekRet      time.Duration
@@ -99,9 +101,9 @@ func (f *fakeController) Artists(context.Context) ([]string, error) {
 	return f.names, nil
 }
 
-func (f *fakeController) Albums(context.Context) ([]string, error) {
+func (f *fakeController) Albums(context.Context) ([]music.Album, error) {
 	f.calls = append(f.calls, "Albums")
-	return f.names, nil
+	return f.albums, nil
 }
 func (f *fakeController) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
 func (f *fakeController) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
@@ -324,12 +326,12 @@ func TestLibraryArtistsCommand(t *testing.T) {
 func TestLibraryAlbumsCommandJSON(t *testing.T) {
 	t.Parallel()
 
-	ctrl := &fakeController{names: []string{"Discovery"}}
+	ctrl := &fakeController{albums: []music.Album{{Name: "Discovery", Artist: "Daft Punk"}}}
 
 	out := run(t, ctrl, "library", "albums", "--json")
 
 	assert.Equal(t, []string{"Albums"}, ctrl.calls)
-	assert.Contains(t, out, `["Discovery"]`)
+	assert.JSONEq(t, `[{"name":"Discovery","artist":"Daft Punk"}]`, strings.TrimSpace(out))
 }
 
 func TestArtworkCommand(t *testing.T) {

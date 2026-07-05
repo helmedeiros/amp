@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/helmedeiros/amp/internal/music"
 )
 
 func TestParseNames(t *testing.T) {
@@ -22,6 +24,25 @@ func TestNamesScriptUsesField(t *testing.T) {
 
 	assert.Contains(t, namesScript("artist"), ".tracks.artist()")
 	assert.Contains(t, namesScript("album"), ".tracks.album()")
+}
+
+func TestParseAlbums(t *testing.T) {
+	t.Parallel()
+
+	got, err := parseAlbums([]byte(`[{"album":"Discovery","artist":"Daft Punk"},{"album":"Mixtape","artist":"Various Artists"}]`))
+
+	require.NoError(t, err)
+	assert.Equal(t, []music.Album{
+		{Name: "Discovery", Artist: "Daft Punk"},
+		{Name: "Mixtape", Artist: "Various Artists"},
+	}, got)
+}
+
+func TestAlbumsScriptGroupsArtists(t *testing.T) {
+	t.Parallel()
+
+	assert.Contains(t, albumsScript, ".tracks")
+	assert.Contains(t, albumsScript, "'Various Artists'")
 }
 
 func TestPlayerArtistsAndAlbums(t *testing.T) {
@@ -41,13 +62,13 @@ func TestPlayerArtistsAndAlbums(t *testing.T) {
 
 	t.Run("albums", func(t *testing.T) {
 		t.Parallel()
-		fake := &fakeRunner{out: []byte(`["Discovery"]`)}
+		fake := &fakeRunner{out: []byte(`[{"album":"Discovery","artist":"Daft Punk"}]`)}
 		p := newPlayer(fake)
 
 		got, err := p.Albums(context.Background())
 
 		require.NoError(t, err)
-		assert.Equal(t, []string{"Discovery"}, got)
-		assert.Equal(t, namesScript("album"), fake.calls[0].script)
+		assert.Equal(t, []music.Album{{Name: "Discovery", Artist: "Daft Punk"}}, got)
+		assert.Equal(t, albumsScript, fake.calls[0].script)
 	})
 }

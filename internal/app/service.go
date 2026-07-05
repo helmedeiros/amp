@@ -64,8 +64,8 @@ func (s *Service) PlayQuery(ctx context.Context, query string, limit int) (port.
 
 	if albums, err := s.player.Albums(ctx); err == nil {
 		for _, a := range albums {
-			if strings.EqualFold(a, q) {
-				return port.PlayResult{Kind: "album", Label: a}, s.player.PlayAlbum(ctx, a)
+			if strings.EqualFold(a.Name, q) {
+				return port.PlayResult{Kind: "album", Label: a.Name}, s.player.PlayAlbum(ctx, a.Name)
 			}
 		}
 	}
@@ -150,8 +150,9 @@ func (s *Service) Artists(ctx context.Context) ([]string, error) {
 	return s.player.Artists(ctx)
 }
 
-// Albums returns the distinct, sorted album names in the library.
-func (s *Service) Albums(ctx context.Context) ([]string, error) {
+// Albums returns the distinct, sorted albums in the library, each with its
+// artist.
+func (s *Service) Albums(ctx context.Context) ([]music.Album, error) {
 	return s.player.Albums(ctx)
 }
 
