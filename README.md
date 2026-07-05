@@ -29,6 +29,7 @@ make build      # produces ./bin/amp
 ```sh
 amp status            # show what's playing (add --json for scripts)
 amp now               # the current track on one line
+amp artwork -o cover.jpg   # save the current album art to a file
 
 amp open              # launch Apple Music
 amp play              # resume playback

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 
@@ -43,6 +44,7 @@ func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 		playlistsCmd(ctrl),
 		libraryCmd(ctrl),
 		transportCmd(ctrl, "open", "Launch Apple Music", port.Controller.Open),
+		artworkCmd(ctrl),
 		playCmd(ctrl),
 		transportCmd(ctrl, "pause", "Pause playback", port.Controller.Pause),
 		transportCmd(ctrl, "toggle", "Toggle play/pause", port.Controller.Toggle),
@@ -102,6 +104,30 @@ func nowCmd(ctrl port.Controller) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func artworkCmd(ctrl port.Controller) *cobra.Command {
+	var output string
+
+	cmd := &cobra.Command{
+		Use:   "artwork",
+		Short: "Save the current track's album art to a file",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path, err := filepath.Abs(output)
+			if err != nil {
+				return err
+			}
+			if err := ctrl.SaveArtwork(cmd.Context(), path); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), path)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&output, "output", "o", "cover.jpg", "file to write the artwork to")
+
+	return cmd
 }
 
 func playCmd(ctrl port.Controller) *cobra.Command {

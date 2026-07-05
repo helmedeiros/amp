@@ -20,6 +20,8 @@ type Controller interface {
 
 	// Open launches the music application.
 	Open(ctx context.Context) error
+	// SaveArtwork writes the current track's album artwork to path.
+	SaveArtwork(ctx context.Context, path string) error
 
 	// PlayQuery resumes playback when query is empty, otherwise resolves it to a
 	// playlist, album, or track search and plays it.
