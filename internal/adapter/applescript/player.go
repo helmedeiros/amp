@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/helmedeiros/amp/internal/music"
 	"github.com/helmedeiros/amp/internal/port"
@@ -52,6 +53,23 @@ func (p *Player) Open(ctx context.Context) error {
 func (p *Player) SaveArtwork(ctx context.Context, path string) error {
 	_, err := p.run.Run(ctx, appleScript, saveArtworkScript(path))
 	return err
+}
+
+// Artwork returns the current track's album artwork bytes. It writes to a temp
+// file (AppleScript emits raw image data) and reads it back.
+func (p *Player) Artwork(ctx context.Context) ([]byte, error) {
+	f, err := os.CreateTemp("", "amp-art-*")
+	if err != nil {
+		return nil, err
+	}
+	path := f.Name()
+	_ = f.Close()
+	defer func() { _ = os.Remove(path) }()
+
+	if err := p.SaveArtwork(ctx, path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
 // Search returns library tracks matching query, up to limit (<= 0 for all).
