@@ -64,6 +64,12 @@ func (f *fakePlayer) PlayAlbum(_ context.Context, name string) error {
 	return nil
 }
 
+func (f *fakePlayer) PlayQueueAt(_ context.Context, index int) error {
+	f.calls = append(f.calls, "PlayQueueAt")
+	f.playStart = index
+	return nil
+}
+
 func (f *fakePlayer) Queue(context.Context) ([]music.Track, error) {
 	f.calls = append(f.calls, "Queue")
 	return f.searchResult, nil

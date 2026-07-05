@@ -76,6 +76,12 @@ func (p *Player) PlayAlbum(ctx context.Context, name string) error {
 	return err
 }
 
+// PlayQueueAt plays the queue starting at the given index.
+func (p *Player) PlayQueueAt(ctx context.Context, index int) error {
+	_, err := p.run.Run(ctx, javaScript, playQueueAtScript(index))
+	return err
+}
+
 // Queue returns the tracks currently in the queue.
 func (p *Player) Queue(ctx context.Context) ([]music.Track, error) {
 	out, err := p.run.Run(ctx, javaScript, queueTracksScript())

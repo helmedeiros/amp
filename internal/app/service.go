@@ -104,6 +104,14 @@ func (s *Service) PlaySearch(ctx context.Context, query string, limit, start int
 	return s.player.PlaySearch(ctx, q, limit, start)
 }
 
+// PlayQueueAt plays the queue starting at the given index.
+func (s *Service) PlayQueueAt(ctx context.Context, index int) error {
+	if index < 0 {
+		return fmt.Errorf("play queue: negative index %d", index)
+	}
+	return s.player.PlayQueueAt(ctx, index)
+}
+
 // Queue returns the tracks currently in the queue.
 func (s *Service) Queue(ctx context.Context) ([]music.Track, error) {
 	return s.player.Queue(ctx)

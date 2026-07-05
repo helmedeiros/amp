@@ -49,6 +49,32 @@ JSON.stringify({added: res.length});
 `, q, limit, qn, qn)
 }
 
+// playQueueAtScript plays the queue from the given index by rotating it so that
+// track is first, then playing from the top. It duplicates the rotated tracks
+// back into the queue and removes the originals (Music can't reliably start a
+// playlist mid-way; see ADR-0004).
+func playQueueAtScript(index int) string {
+	qn, _ := json.Marshal(queuePlaylistName)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const out = {played: false};
+try {
+  const pl = Music.userPlaylists.byName(%s);
+  const tracks = pl.tracks();
+  const n = tracks.length;
+  if (n > 0) {
+    const i = (((%d) %% n) + n) %% n;
+    const rotated = tracks.slice(i).concat(tracks.slice(0, i));
+    for (const t of rotated) Music.duplicate(t, {to: pl});
+    for (let k = 0; k < n; k++) Music.delete(pl.tracks[0]);
+    pl.play();
+    out.played = true;
+  }
+} catch (e) {}
+JSON.stringify(out);
+`, qn, index)
+}
+
 // queueClearScript empties the queue playlist, keeping the playlist itself.
 func queueClearScript() string {
 	qn, _ := json.Marshal(queuePlaylistName)

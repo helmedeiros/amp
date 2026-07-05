@@ -29,6 +29,8 @@ type Controller interface {
 	// PlaySearch plays the search results starting at the chosen index, queueing
 	// the rest.
 	PlaySearch(ctx context.Context, query string, limit, start int) error
+	// PlayQueueAt plays the queue starting at the given index.
+	PlayQueueAt(ctx context.Context, index int) error
 	// Queue returns the tracks currently in the queue.
 	Queue(ctx context.Context) ([]music.Track, error)
 	// QueueAdd appends the search results to the queue and returns how many were
