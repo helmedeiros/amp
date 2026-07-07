@@ -105,12 +105,14 @@ func (l list) View() string {
 
 	var b strings.Builder
 	for i := l.offset; i < end; i++ {
-		switch {
-		case i == l.cursor && i == l.marker:
-			b.WriteString("♪ " + selectedStyle.Render(l.items[i]) + "\n")
-		case i == l.cursor:
-			b.WriteString("▶ " + selectedStyle.Render(l.items[i]) + "\n")
-		case i == l.marker:
+		switch i {
+		case l.cursor:
+			prefix := "▶ "
+			if i == l.marker {
+				prefix = "♪ " // cursor is sitting on the playing track
+			}
+			b.WriteString(prefix + selectedStyle.Render(l.items[i]) + "\n")
+		case l.marker:
 			b.WriteString("♪ " + playingStyle.Render(l.items[i]) + "\n")
 		default:
 			b.WriteString("  " + l.items[i] + "\n")

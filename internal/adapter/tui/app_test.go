@@ -38,6 +38,7 @@ func (s *stubController) ArtistCatalogAlbums(_ context.Context, _ string) ([]mus
 	s.calls = append(s.calls, "ArtistCatalogAlbums")
 	return s.artistAlbums, nil
 }
+
 func (s *stubController) AddCatalogAlbums(_ context.Context, ids []string) (int, error) {
 	s.calls = append(s.calls, "AddCatalogAlbums")
 	s.addedIDs = ids
