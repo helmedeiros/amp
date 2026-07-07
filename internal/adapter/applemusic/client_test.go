@@ -57,6 +57,38 @@ func TestResolveAlbumNoMatchReturnsEmpty(t *testing.T) {
 	assert.Empty(t, id)
 }
 
+func TestArtistAlbumsExcludesSinglesAndDedupesEditions(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Query().Get("types") == "artists":
+			_, _ = w.Write([]byte(`{"results":{"artists":{"data":[{"id":"k1","attributes":{"name":"The Kooks"}}]}}}`))
+		default: // /v1/catalog/de/artists/k1/albums
+			_, _ = w.Write([]byte(`{"data":[
+				{"id":"listen","attributes":{"name":"Listen","trackCount":11}},
+				{"id":"listen-dlx","attributes":{"name":"Listen (Deluxe Edition)","trackCount":16}},
+				{"id":"konk","attributes":{"name":"Konk","trackCount":14}},
+				{"id":"nawww","attributes":{"name":"Naive - Single","trackCount":2,"isSingle":true}}
+			]}`))
+		}
+	}))
+	defer srv.Close()
+
+	c := testClient(srv, Creds{Storefront: "de"})
+	albums, err := c.ArtistAlbums(context.Background(), "The Kooks")
+
+	require.NoError(t, err)
+	names := map[string]int{}
+	for _, a := range albums {
+		names[a.Name] = a.TrackCount
+	}
+	assert.Len(t, albums, 2, "single dropped, Listen editions collapsed to one")
+	assert.Equal(t, 11, names["Listen"], "standard Listen kept over the 16-track deluxe")
+	assert.Contains(t, names, "Konk")
+	assert.NotContains(t, names, "Naive - Single")
+}
+
 func TestAddAlbumSendsPostAndAcceptsAccepted(t *testing.T) {
 	t.Parallel()
 

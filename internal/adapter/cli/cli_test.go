@@ -105,8 +105,13 @@ func (f *fakeController) Albums(context.Context) ([]music.Album, error) {
 	f.calls = append(f.calls, "Albums")
 	return f.albums, nil
 }
-func (f *fakeController) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
-func (f *fakeController) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
+func (f *fakeController) CatalogEnabled() bool { return false }
+func (f *fakeController) ArtistCatalogAlbums(context.Context, string) ([]music.CatalogAlbum, error) {
+	return nil, nil
+}
+func (f *fakeController) AddCatalogAlbums(context.Context, []string) (int, error) { return 0, nil }
+func (f *fakeController) Play(context.Context) error                              { f.calls = append(f.calls, "Play"); return nil }
+func (f *fakeController) Pause(context.Context) error                             { f.calls = append(f.calls, "Pause"); return nil }
 func (f *fakeController) Toggle(context.Context) error {
 	f.calls = append(f.calls, "Toggle")
 	return nil

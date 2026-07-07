@@ -38,10 +38,12 @@ type fakePlayer struct {
 
 // fakeCatalog records catalog calls for the auto-add tests.
 type fakeCatalog struct {
-	calls      []string
-	resolveID  string
-	resolveErr error
-	addErr     error
+	calls        []string
+	resolveID    string
+	resolveErr   error
+	addErr       error
+	artistAlbums []music.CatalogAlbum
+	artistErr    error
 }
 
 func (c *fakeCatalog) ResolveAlbum(_ context.Context, _, _ string) (string, error) {
@@ -52,6 +54,11 @@ func (c *fakeCatalog) ResolveAlbum(_ context.Context, _, _ string) (string, erro
 func (c *fakeCatalog) AddAlbum(_ context.Context, id string) error {
 	c.calls = append(c.calls, "AddAlbum:"+id)
 	return c.addErr
+}
+
+func (c *fakeCatalog) ArtistAlbums(_ context.Context, _ string) ([]music.CatalogAlbum, error) {
+	c.calls = append(c.calls, "ArtistAlbums")
+	return c.artistAlbums, c.artistErr
 }
 
 func (f *fakePlayer) Status(context.Context) (music.Status, error) {
@@ -333,6 +340,48 @@ func TestServicePlayQueryDoesNotAddCompleteAlbum(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, cat.calls, "a complete album triggers no catalog calls")
+}
+
+func TestServiceArtistCatalogAlbumsFiltersOwned(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{albums: []music.Album{{Name: "Konk", Artist: "The Kooks"}}}
+	cat := &fakeCatalog{artistAlbums: []music.CatalogAlbum{
+		{ID: "1", Name: "Konk", TrackCount: 14},   // already owned -> filtered
+		{ID: "2", Name: "Listen", TrackCount: 11}, // missing -> kept
+	}}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableCatalog(cat)
+
+	got, err := svc.ArtistCatalogAlbums(context.Background(), "The Kooks")
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Listen", got[0].Name)
+}
+
+func TestServiceArtistCatalogAlbumsNeedsCatalog(t *testing.T) {
+	t.Parallel()
+
+	svc := app.NewService(&fakePlayer{}, &memStore{})
+	assert.False(t, svc.CatalogEnabled())
+
+	_, err := svc.ArtistCatalogAlbums(context.Background(), "X")
+	require.Error(t, err)
+}
+
+func TestServiceAddCatalogAlbums(t *testing.T) {
+	t.Parallel()
+
+	cat := &fakeCatalog{}
+	svc := app.NewService(&fakePlayer{}, &memStore{})
+	svc.EnableCatalog(cat)
+
+	n, err := svc.AddCatalogAlbums(context.Background(), []string{"a", "b"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, []string{"AddAlbum:a", "AddAlbum:b"}, cat.calls)
 }
 
 func TestServicePlayQueryFallsBackToTrackSearch(t *testing.T) {

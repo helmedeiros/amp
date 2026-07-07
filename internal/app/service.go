@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -219,6 +220,69 @@ func (s *Service) Artists(ctx context.Context) ([]string, error) {
 func (s *Service) Albums(ctx context.Context) ([]music.Album, error) {
 	return s.player.Albums(ctx)
 }
+
+// CatalogEnabled reports whether an Apple Music catalog client is configured.
+func (s *Service) CatalogEnabled() bool { return s.catalog != nil }
+
+// ArtistCatalogAlbums returns the artist's catalog albums that are not already
+// in the library — the candidates for the "add albums from Apple Music" flow.
+// It returns an error when no catalog client is configured.
+func (s *Service) ArtistCatalogAlbums(ctx context.Context, artist string) ([]music.CatalogAlbum, error) {
+	if s.catalog == nil {
+		return nil, fmt.Errorf("apple music not configured: run `amp auth apple-music`")
+	}
+	catalog, err := s.catalog.ArtistAlbums(ctx, artist)
+	if err != nil {
+		return nil, err
+	}
+
+	// Drop the ones already present in the library (matched by base name).
+	have := map[string]bool{}
+	if lib, err := s.player.Albums(ctx); err == nil {
+		for _, a := range lib {
+			if strings.EqualFold(a.Artist, artist) || a.Artist == "" {
+				have[baseName(a.Name)] = true
+			}
+		}
+	}
+	missing := make([]music.CatalogAlbum, 0, len(catalog))
+	for _, a := range catalog {
+		if !have[baseName(a.Name)] {
+			missing = append(missing, a)
+		}
+	}
+	return missing, nil
+}
+
+// AddCatalogAlbums adds the given catalog album IDs to the library, returning how
+// many succeeded. Tracks appear once iCloud Music Library syncs.
+func (s *Service) AddCatalogAlbums(ctx context.Context, ids []string) (int, error) {
+	if s.catalog == nil {
+		return 0, fmt.Errorf("apple music not configured: run `amp auth apple-music`")
+	}
+	added := 0
+	for _, id := range ids {
+		if err := s.catalog.AddAlbum(ctx, id); err != nil {
+			return added, err
+		}
+		added++
+	}
+	return added, nil
+}
+
+// baseName strips edition/remaster qualifiers so album names compare across
+// catalog and library.
+func baseName(name string) string {
+	for {
+		next := strings.TrimSpace(editionSuffix.ReplaceAllString(name, ""))
+		if next == name {
+			return strings.ToLower(name)
+		}
+		name = next
+	}
+}
+
+var editionSuffix = regexp.MustCompile(`(?i)\s*[\(\[][^\)\]]*(edition|deluxe|remaster|anniversar|expanded|version|bonus|special|super|mono|stereo|reissue|explicit|remix|legacy|mix)[^\)\]]*[\)\]]`)
 
 // Play resumes or starts playback.
 func (s *Service) Play(ctx context.Context) error { return s.player.Play(ctx) }

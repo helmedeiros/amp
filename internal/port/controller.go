@@ -55,6 +55,16 @@ type Controller interface {
 	// artist (or "Various Artists" when the album's tracks disagree).
 	Albums(ctx context.Context) ([]music.Album, error)
 
+	// CatalogEnabled reports whether Apple Music credentials are configured, so
+	// driving adapters can offer the "add albums from Apple Music" action.
+	CatalogEnabled() bool
+	// ArtistCatalogAlbums returns the artist's catalog albums that are not yet in
+	// the library (the candidates for the per-artist add flow).
+	ArtistCatalogAlbums(ctx context.Context, artist string) ([]music.CatalogAlbum, error)
+	// AddCatalogAlbums adds the given catalog album IDs to the library and returns
+	// how many were added.
+	AddCatalogAlbums(ctx context.Context, ids []string) (int, error)
+
 	Play(ctx context.Context) error
 	Pause(ctx context.Context) error
 	Toggle(ctx context.Context) error

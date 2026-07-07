@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/helmedeiros/amp/internal/music"
 	"github.com/helmedeiros/amp/internal/port"
 )
 
@@ -88,6 +91,108 @@ func (c *Client) ResolveAlbum(ctx context.Context, name, artist string) (string,
 		}
 	}
 	return bestID, nil
+}
+
+// artistSearchResponse is the slice of an artist search we consume.
+type artistSearchResponse struct {
+	Results struct {
+		Artists struct {
+			Data []struct {
+				ID         string `json:"id"`
+				Attributes struct {
+					Name string `json:"name"`
+				} `json:"attributes"`
+			} `json:"data"`
+		} `json:"artists"`
+	} `json:"results"`
+}
+
+// albumsResponse is the slice of an artist's albums relationship we consume.
+type albumsResponse struct {
+	Next string `json:"next"`
+	Data []struct {
+		ID         string `json:"id"`
+		Attributes struct {
+			Name          string `json:"name"`
+			TrackCount    int    `json:"trackCount"`
+			IsSingle      bool   `json:"isSingle"`
+			IsCompilation bool   `json:"isCompilation"`
+		} `json:"attributes"`
+	} `json:"data"`
+}
+
+// ArtistAlbums resolves the artist and returns their catalog albums with singles
+// excluded and multiple editions collapsed to one entry each (preferring the
+// standard edition — the fewest tracks). It leaves finer curation to the caller.
+func (c *Client) ArtistAlbums(ctx context.Context, artist string) ([]music.CatalogAlbum, error) {
+	body, err := c.apiGet(ctx, fmt.Sprintf("/v1/catalog/%s/search?term=%s&types=artists&limit=5",
+		url.PathEscape(c.creds.Storefront), url.QueryEscape(artist)))
+	if err != nil {
+		return nil, err
+	}
+	var sr artistSearchResponse
+	if err := json.Unmarshal(body, &sr); err != nil {
+		return nil, fmt.Errorf("apple music: decode artist search: %w", err)
+	}
+	var artistID string
+	for _, a := range sr.Results.Artists.Data {
+		if strings.EqualFold(a.Attributes.Name, artist) {
+			artistID = a.ID
+			break
+		}
+	}
+	if artistID == "" && len(sr.Results.Artists.Data) > 0 {
+		artistID = sr.Results.Artists.Data[0].ID
+	}
+	if artistID == "" {
+		return nil, nil
+	}
+
+	// Collapse editions by base name, keeping the fewest-track (standard) one.
+	best := map[string]music.CatalogAlbum{}
+	path := fmt.Sprintf("/v1/catalog/%s/artists/%s/albums?limit=100", url.PathEscape(c.creds.Storefront), artistID)
+	for page := 0; path != "" && page < 4; page++ {
+		body, err := c.apiGet(ctx, path)
+		if err != nil {
+			return nil, err
+		}
+		var ar albumsResponse
+		if err := json.Unmarshal(body, &ar); err != nil {
+			return nil, fmt.Errorf("apple music: decode albums: %w", err)
+		}
+		for _, a := range ar.Data {
+			if a.Attributes.IsSingle {
+				continue
+			}
+			key := baseAlbumName(a.Attributes.Name)
+			cur, ok := best[key]
+			if !ok || a.Attributes.TrackCount < cur.TrackCount {
+				best[key] = music.CatalogAlbum{ID: a.ID, Name: a.Attributes.Name, TrackCount: a.Attributes.TrackCount}
+			}
+		}
+		path = ar.Next
+	}
+
+	out := make([]music.CatalogAlbum, 0, len(best))
+	for _, a := range best {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// editionSuffix matches trailing "(… Edition)" / "[… Remaster]" style qualifiers
+// so different editions of one album collapse together.
+var editionSuffix = regexp.MustCompile(`(?i)\s*[\(\[][^\)\]]*(edition|deluxe|remaster|anniversar|expanded|version|bonus|special|super|mono|stereo|reissue|explicit|remix|legacy|mix)[^\)\]]*[\)\]]`)
+
+func baseAlbumName(name string) string {
+	for {
+		next := strings.TrimSpace(editionSuffix.ReplaceAllString(name, ""))
+		if next == name {
+			return strings.ToLower(name)
+		}
+		name = next
+	}
 }
 
 // AddAlbum adds the catalog album to the user's library. Apple returns 202

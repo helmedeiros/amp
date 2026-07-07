@@ -12,6 +12,14 @@ type Album struct {
 // than one artist.
 const VariousArtists = "Various Artists"
 
+// CatalogAlbum is an album offered by the Apple Music catalog (not necessarily
+// in the library). It is used by the per-artist "add albums" flow.
+type CatalogAlbum struct {
+	ID         string
+	Name       string
+	TrackCount int
+}
+
 // AlbumCoverage reports how much of an album made it into the queue: how many
 // tracks were queued from the library versus how many the album's metadata says
 // it has. Total is 0 when the metadata does not record a track count.
