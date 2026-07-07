@@ -366,31 +366,50 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadTab(m.active)
 		}
 	case "a":
-		if m.active == tabArtists {
-			return m.startAddAlbums()
+		if m.active == tabArtists || m.active == tabAlbums {
+			return m.startAddAlbums(m.selectedArtist())
 		}
 	}
 	return m, nil
 }
 
-// startAddAlbums begins the "add albums from Apple Music" flow for the selected
-// artist: it fetches their catalog albums (async, with a loading bar). It no-ops
-// with a hint when Apple Music is not configured.
-func (m app) startAddAlbums() (tea.Model, tea.Cmd) {
-	l := &m.lists[tabArtists]
+// selectedArtist returns the artist for the highlighted row: the row itself on
+// the Artists tab, or the album's artist (parsed from its "Artist — Album" line)
+// on the Albums tab. It returns "" when no artist can be determined.
+func (m app) selectedArtist() string {
+	l := &m.lists[m.active]
 	if l.Len() == 0 {
-		return m, nil
+		return ""
 	}
 	idx := m.orig(l.Cursor())
-	vals := m.values[tabArtists]
-	if idx >= len(vals) {
+	switch m.active {
+	case tabArtists:
+		if vals := m.values[tabArtists]; idx < len(vals) {
+			return vals[idx]
+		}
+	case tabAlbums:
+		items, vals := m.items[tabAlbums], m.values[tabAlbums]
+		if idx < len(items) && idx < len(vals) {
+			// albumLines renders "Artist — Album"; strip the album to get the artist.
+			if a := strings.TrimSuffix(items[idx], " — "+vals[idx]); a != items[idx] {
+				return a
+			}
+		}
+	}
+	return ""
+}
+
+// startAddAlbums begins the "add albums from Apple Music" flow for artist: it
+// fetches their catalog albums (async, with a loading bar). It no-ops with a
+// hint when Apple Music is not configured or the artist is unknown.
+func (m app) startAddAlbums(artist string) (tea.Model, tea.Cmd) {
+	if artist == "" {
 		return m, nil
 	}
 	if !m.ctrl.CatalogEnabled() {
 		m.notice = "Apple Music not connected — run: amp auth apple-music"
 		return m, nil
 	}
-	artist := vals[idx]
 	m.working, m.workFrame, m.workLabel, m.flash = true, 0, "fetching "+artist+"’s albums…", ""
 	ctx, ctrl := m.ctx, m.ctrl
 	fetch := func() tea.Msg {
@@ -815,7 +834,11 @@ func (m app) hint() string {
 		return "type to filter · enter keep · esc clear"
 	}
 	if m.filterQuery != "" {
-		return "filtered · esc clear · j/k move · enter play · / refine"
+		h := "filtered · esc clear · j/k move · enter play · / refine"
+		if m.active == tabArtists || m.active == tabAlbums {
+			h += " · a add albums"
+		}
+		return h
 	}
 	find := "filter"
 	if m.active == tabSearch {
@@ -825,7 +848,7 @@ func (m app) hint() string {
 	if m.active != tabSearch {
 		base += " · r reload"
 	}
-	if m.active == tabArtists {
+	if m.active == tabArtists || m.active == tabAlbums {
 		base += " · a add albums"
 	}
 	return base + " · q quit"

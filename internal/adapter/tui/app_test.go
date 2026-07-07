@@ -532,6 +532,37 @@ func TestAppArtistAddAlbumsPickerFlow(t *testing.T) {
 	assert.Contains(t, m.View(), "added 1 album")
 }
 
+func TestAppAlbumsTabAddAlbumsUsesRowArtist(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{
+		albums:         []music.Album{{Name: "Konk", Artist: "The Kooks"}},
+		catalogEnabled: true,
+		artistAlbums:   []music.CatalogAlbum{{ID: "listen", Name: "Listen", TrackCount: 11}},
+	}
+	m := newTestApp(ctrl)
+	m.active = tabAlbums
+	next, _ := m.Update(m.loadTab(tabAlbums)())
+	m = next.(app)
+
+	// The footer advertises the action on the Albums tab.
+	assert.Contains(t, m.View(), "a add albums")
+
+	// 'a' derives the artist from the highlighted "The Kooks — Konk" row.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = next.(app)
+	require.NotNil(t, cmd)
+	assert.True(t, m.working)
+	var got artistAlbumsMsg
+	for _, msg := range drainBatch(cmd) {
+		if a, ok := msg.(artistAlbumsMsg); ok {
+			got = a
+		}
+	}
+	assert.Equal(t, "The Kooks", got.artist)
+	assert.Contains(t, ctrl.calls, "ArtistCatalogAlbums")
+}
+
 func TestAppArtistAddAlbumsNeedsCatalog(t *testing.T) {
 	t.Parallel()
 
