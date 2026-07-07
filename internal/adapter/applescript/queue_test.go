@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/helmedeiros/amp/internal/music"
 )
 
 func TestPlaySearchScript(t *testing.T) {
@@ -91,6 +93,8 @@ func TestPlayAlbumScript(t *testing.T) {
 	assert.Contains(t, script, `const want = "Discovery";`)
 	assert.Contains(t, script, "only: 'albums'")
 	assert.Contains(t, script, "a.trackNumber() - b.trackNumber()")
+	assert.Contains(t, script, "t.trackCount()")
+	assert.Contains(t, script, "queued: tracks.length, total: total")
 	assert.Contains(t, script, `Music.userPlaylists.byName("amp queue")`)
 	assert.Contains(t, script, "pl.play();")
 }
@@ -103,7 +107,10 @@ func TestPlayerPlayPlaylistAndAlbum(t *testing.T) {
 	assert.Equal(t, javaScript, fp.calls[0].lang)
 	assert.Contains(t, fp.calls[0].script, `"Chill"`)
 
-	fa := &fakeRunner{}
-	require.NoError(t, newPlayer(fa).PlayAlbum(context.Background(), "Discovery"))
+	fa := &fakeRunner{out: []byte(`{"queued":2,"total":11}`)}
+	cov, err := newPlayer(fa).PlayAlbum(context.Background(), "Discovery")
+	require.NoError(t, err)
 	assert.Contains(t, fa.calls[0].script, `"Discovery"`)
+	assert.Equal(t, music.AlbumCoverage{Queued: 2, Total: 11}, cov)
+	assert.True(t, cov.Partial(), "2 of 11 tracks is a partial album")
 }

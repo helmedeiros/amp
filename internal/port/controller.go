@@ -11,6 +11,13 @@ import (
 type PlayResult struct {
 	Kind  string // "resume", "playlist", "album", or "track"
 	Label string // playlist/album name or "Artist — Title"; empty for resume
+
+	// Album is populated for the "album" kind: how much of the album was in the
+	// library. Use it to warn when only part of an album could be queued.
+	Album music.AlbumCoverage
+	// AlbumFilled is true when a catalog add was attempted to complete the album
+	// (so the caller can distinguish "still syncing" from "not configured").
+	AlbumFilled bool
 }
 
 // Controller is the driving port: the use-case surface that driving adapters

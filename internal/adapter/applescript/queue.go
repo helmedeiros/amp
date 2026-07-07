@@ -103,7 +103,9 @@ pl.play();
 }
 
 // playAlbumScript loads the named album into the queue in track order and plays
-// it from the top.
+// it from the top. It also reports the album's own track count (the highest
+// "track N of M" seen), so callers can tell when only part of an album is in the
+// library.
 func playAlbumScript(name string) string {
 	n, _ := json.Marshal(name)
 	qn, _ := json.Marshal(queuePlaylistName)
@@ -113,8 +115,15 @@ const Music = Application('Music');
 const lib = Music.libraryPlaylists[0];
 const want = %s;
 let tracks = [];
+let total = 0;
 for (const t of Music.search(lib, {for: want, only: 'albums'})) {
-  try { if (t.album().toLowerCase() === want.toLowerCase()) tracks.push(t); } catch (e) {}
+  try {
+    if (t.album().toLowerCase() === want.toLowerCase()) {
+      tracks.push(t);
+      const c = t.trackCount();
+      if (c > total) total = c;
+    }
+  } catch (e) {}
 }
 tracks.sort((a, b) => { try { return a.trackNumber() - b.trackNumber(); } catch (e) { return 0; } });
 if (tracks.length > 0) {
@@ -124,8 +133,26 @@ if (tracks.length > 0) {
   for (const t of tracks) Music.duplicate(t, {to: pl});
   pl.play();
 }
-JSON.stringify({queued: tracks.length});
+JSON.stringify({queued: tracks.length, total: total});
 `, n, qn, qn)
+}
+
+// albumCoverageScript counts the named album's tracks in the library and reads
+// the album's own track count (highest "track N of M"), without touching
+// playback. It uses a direct library query rather than search so the count is
+// exact — the number used to await an iCloud sync.
+func albumCoverageScript(name string) string {
+	n, _ := json.Marshal(name)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const lib = Music.libraryPlaylists[0];
+const want = %s;
+let ts = [];
+try { ts = lib.tracks.whose({album: want})(); } catch (e) {}
+let total = 0;
+for (const t of ts) { try { const c = t.trackCount(); if (c > total) total = c; } catch (e) {} }
+JSON.stringify({queued: ts.length, total: total});
+`, n)
 }
 
 // playSearchScript builds a JXA program that re-runs the library search, loads

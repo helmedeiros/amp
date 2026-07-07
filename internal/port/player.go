@@ -28,8 +28,12 @@ type Player interface {
 	PlaySearch(ctx context.Context, query string, limit, start int) error
 	// PlayPlaylist plays the named user playlist.
 	PlayPlaylist(ctx context.Context, name string) error
-	// PlayAlbum loads the named album into the queue in track order and plays it.
-	PlayAlbum(ctx context.Context, name string) error
+	// PlayAlbum loads the named album into the queue in track order and plays it,
+	// returning how much of the album was available in the library.
+	PlayAlbum(ctx context.Context, name string) (music.AlbumCoverage, error)
+	// AlbumCoverage reports how much of the named album is in the library without
+	// changing playback (used to detect partial albums and await library syncs).
+	AlbumCoverage(ctx context.Context, name string) (music.AlbumCoverage, error)
 	// PlayQueueAt plays the queue starting at the given index.
 	PlayQueueAt(ctx context.Context, index int) error
 	// Queue returns the tracks currently in the queue.

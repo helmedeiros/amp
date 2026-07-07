@@ -26,6 +26,7 @@ type stubController struct {
 	calls      []string
 	playedName string
 	playedIdx  int
+	playResult port.PlayResult
 }
 
 func (s *stubController) Queue(context.Context) ([]music.Track, error) { return s.queue, nil }
@@ -44,7 +45,7 @@ func (s *stubController) PlayQueueAt(_ context.Context, index int) error {
 func (s *stubController) PlayQuery(_ context.Context, query string, _ int) (port.PlayResult, error) {
 	s.calls = append(s.calls, "PlayQuery")
 	s.playedName = query
-	return port.PlayResult{}, nil
+	return s.playResult, nil
 }
 
 func (s *stubController) Toggle(context.Context) error {
@@ -436,6 +437,99 @@ func TestAppHeaderUpdatesFromStatus(t *testing.T) {
 	assert.Contains(t, view, "Utsu-P — Gorgon")
 	assert.Contains(t, view, "01:57")
 	assert.Contains(t, view, "vol 60%")
+}
+
+func TestAlbumFeedback(t *testing.T) {
+	t.Parallel()
+
+	// Complete album -> success flash, no warning.
+	n, f := albumFeedback(port.PlayResult{Kind: "album", Label: "In Utero", Album: music.AlbumCoverage{Queued: 12, Total: 12}})
+	assert.Empty(t, n)
+	assert.Contains(t, f, "✓ In Utero — all 12 tracks")
+
+	// Still partial after a catalog fill -> "still syncing", no flash.
+	n, f = albumFeedback(port.PlayResult{Kind: "album", Label: "X", Album: music.AlbumCoverage{Queued: 2, Total: 11}, AlbumFilled: true})
+	assert.Contains(t, n, "still syncing")
+	assert.Empty(t, f)
+
+	// Partial with no catalog configured -> points at amp auth.
+	n, f = albumFeedback(port.PlayResult{Kind: "album", Label: "X", Album: music.AlbumCoverage{Queued: 2, Total: 11}})
+	assert.Contains(t, n, "amp auth apple-music")
+	assert.Empty(t, f)
+
+	// Unknown total (or non-album) -> nothing.
+	n, f = albumFeedback(port.PlayResult{Kind: "album", Album: music.AlbumCoverage{Queued: 2, Total: 0}})
+	assert.Empty(t, n)
+	assert.Empty(t, f)
+}
+
+func TestAppAlbumPlayShowsLoadingBarThenFlash(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{albums: []music.Album{{Name: "In Utero", Artist: "Nirvana"}}}
+	m := newTestApp(ctrl)
+	m.active = tabAlbums
+	next, _ := m.Update(m.loadTab(tabAlbums)())
+	m = next.(app)
+
+	// Enter starts the loading bar (an animated block track) while the fill runs.
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(app)
+	require.NotNil(t, cmd)
+	assert.True(t, m.working)
+	assert.Contains(t, m.View(), "completing album via Apple Music")
+	assert.Contains(t, m.View(), "▓")
+
+	// When the play resolves complete, the bar gives way to a success flash.
+	next, _ = m.Update(queuePlayedMsg{flash: "✓ In Utero — all 12 tracks in your library"})
+	m = next.(app)
+	assert.False(t, m.working)
+	assert.Contains(t, m.View(), "all 12 tracks")
+
+	// The flash clears itself.
+	next, _ = m.Update(flashClearMsg{})
+	m = next.(app)
+	assert.NotContains(t, m.View(), "all 12 tracks")
+}
+
+func TestAppAlbumPartialWarningRendersAndClearsOnTabSwitch(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	next, _ := m.Update(queuePlayedMsg{notice: "only 1 of 13 tracks of \"X\" are in your library"})
+	m = next.(app)
+	assert.Contains(t, m.View(), "only 1 of 13 tracks")
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
+	m = next.(app)
+	assert.NotContains(t, m.View(), "only 1 of 13 tracks")
+}
+
+func TestAppQueueMarksAndFollowsPlayingTrack(t *testing.T) {
+	t.Parallel()
+
+	first := music.Track{Name: "Jacqueline", Artist: "Franz Ferdinand", Album: "Franz Ferdinand"}
+	second := music.Track{Name: "Take Me Out", Artist: "Franz Ferdinand", Album: "Franz Ferdinand"}
+	ctrl := &stubController{queue: []music.Track{first, second}}
+
+	m := newTestApp(ctrl) // Queue is the default active tab
+	next, _ := m.Update(m.loadTab(tabQueue)())
+	m = next.(app)
+
+	// First track plays: it is marked and the cursor sits on it.
+	playing := music.Status{State: music.Playing, Track: first}
+	next, _ = m.Update(statusMsg(playing))
+	m = next.(app)
+	assert.Equal(t, 0, m.lists[tabQueue].Cursor())
+	assert.Equal(t, 0, m.lists[tabQueue].marker)
+
+	// Auto-advance to the second track moves the marker and the cursor with it,
+	// even though the user never touched j/k.
+	next, _ = m.Update(statusMsg(music.Status{State: music.Playing, Track: second}))
+	m = next.(app)
+	assert.Equal(t, 1, m.lists[tabQueue].Cursor(), "cursor follows the playing track")
+	assert.Equal(t, 1, m.lists[tabQueue].marker)
+	assert.Contains(t, m.View(), "♪ ")
 }
 
 func TestAppShowsTabItems(t *testing.T) {

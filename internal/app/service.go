@@ -18,14 +18,29 @@ const DefaultUnmuteVolume = 50
 // Service is the application's entry point for controlling playback. It is the
 // single object the driving adapters (CLI, later the TUI) call into.
 type Service struct {
-	player port.Player
-	volume port.VolumeStore
+	player  port.Player
+	volume  port.VolumeStore
+	catalog port.Catalog // optional; nil unless Apple Music auth is configured
 }
 
 // NewService wires the service to a Player and a VolumeStore.
 func NewService(player port.Player, volume port.VolumeStore) *Service {
 	return &Service{player: player, volume: volume}
 }
+
+// EnableCatalog attaches an Apple Music catalog client so that playing a
+// partly-in-library album first adds the missing tracks. Optional: without it,
+// partial albums are played as-is and only reported.
+func (s *Service) EnableCatalog(c port.Catalog) { s.catalog = c }
+
+// albumSyncTimeout bounds how long a play waits for added tracks to sync into
+// the library before falling back to playing what is already there.
+// albumSyncPoll is how often the library is re-checked meanwhile. They are vars
+// so tests can shrink them.
+var (
+	albumSyncTimeout = 15 * time.Second
+	albumSyncPoll    = 2 * time.Second
+)
 
 var _ port.Controller = (*Service)(nil)
 
@@ -65,7 +80,9 @@ func (s *Service) PlayQuery(ctx context.Context, query string, limit int) (port.
 	if albums, err := s.player.Albums(ctx); err == nil {
 		for _, a := range albums {
 			if strings.EqualFold(a.Name, q) {
-				return port.PlayResult{Kind: "album", Label: a.Name}, s.player.PlayAlbum(ctx, a.Name)
+				filled := s.fillAlbumIfPartial(ctx, a)
+				coverage, err := s.player.PlayAlbum(ctx, a.Name)
+				return port.PlayResult{Kind: "album", Label: a.Name, Album: coverage, AlbumFilled: filled}, err
 			}
 		}
 	}
@@ -87,6 +104,53 @@ func (s *Service) PlayQuery(ctx context.Context, query string, limit int) (port.
 		label = first.Artist + " — " + first.Name
 	}
 	return port.PlayResult{Kind: "track", Label: label}, nil
+}
+
+// fillAlbumIfPartial adds an album's missing tracks via the Apple Music catalog
+// when a catalog client is configured and the album is only partly in the
+// library, then waits (up to albumSyncTimeout) for the added tracks to sync in.
+// It is best-effort. It returns true when an add was attempted (so callers can
+// tell "still syncing" apart from "no catalog configured").
+func (s *Service) fillAlbumIfPartial(ctx context.Context, a music.Album) bool {
+	if s.catalog == nil {
+		return false
+	}
+	cov, err := s.player.AlbumCoverage(ctx, a.Name)
+	if err != nil || !cov.Partial() {
+		return false
+	}
+
+	id, err := s.catalog.ResolveAlbum(ctx, a.Name, a.Artist)
+	if err != nil || id == "" {
+		return false
+	}
+	if err := s.catalog.AddAlbum(ctx, id); err != nil {
+		return false
+	}
+	s.awaitAlbumSync(ctx, a.Name, cov.Total)
+	return true
+}
+
+// awaitAlbumSync polls the library until the album holds want tracks or the
+// timeout elapses.
+func (s *Service) awaitAlbumSync(ctx context.Context, name string, want int) {
+	deadline := time.NewTimer(albumSyncTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(albumSyncPoll)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline.C:
+			return
+		case <-ticker.C:
+			if cov, err := s.player.AlbumCoverage(ctx, name); err == nil && cov.Queued >= want {
+				return
+			}
+		}
+	}
 }
 
 // Search returns library tracks matching query, up to limit (<= 0 for all).

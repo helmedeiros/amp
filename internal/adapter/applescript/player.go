@@ -76,10 +76,38 @@ func (p *Player) PlayPlaylist(ctx context.Context, name string) error {
 	return err
 }
 
-// PlayAlbum loads the named album into the queue in track order and plays it.
-func (p *Player) PlayAlbum(ctx context.Context, name string) error {
-	_, err := p.run.Run(ctx, javaScript, playAlbumScript(name))
-	return err
+// PlayAlbum loads the named album into the queue in track order and plays it,
+// returning how much of the album was available in the library.
+func (p *Player) PlayAlbum(ctx context.Context, name string) (music.AlbumCoverage, error) {
+	out, err := p.run.Run(ctx, javaScript, playAlbumScript(name))
+	if err != nil {
+		return music.AlbumCoverage{}, err
+	}
+	var res struct {
+		Queued int `json:"queued"`
+		Total  int `json:"total"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return music.AlbumCoverage{}, nil // played fine; coverage is just unknown
+	}
+	return music.AlbumCoverage{Queued: res.Queued, Total: res.Total}, nil
+}
+
+// AlbumCoverage reports how much of the named album is in the library without
+// changing playback.
+func (p *Player) AlbumCoverage(ctx context.Context, name string) (music.AlbumCoverage, error) {
+	out, err := p.run.Run(ctx, javaScript, albumCoverageScript(name))
+	if err != nil {
+		return music.AlbumCoverage{}, err
+	}
+	var res struct {
+		Queued int `json:"queued"`
+		Total  int `json:"total"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return music.AlbumCoverage{}, fmt.Errorf("decode album coverage: %w", err)
+	}
+	return music.AlbumCoverage{Queued: res.Queued, Total: res.Total}, nil
 }
 
 // PlayQueueAt plays the queue starting at the given index.
