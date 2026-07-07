@@ -8,11 +8,13 @@ type list struct {
 	cursor int
 	offset int
 	height int
+	marker int // playing row (-1 = none), shown even when the cursor is elsewhere
 }
 
-func newList() list { return list{height: 10} }
+func newList() list { return list{height: 10, marker: -1} }
 
-// SetItems replaces the contents, keeping the cursor in range.
+// SetItems replaces the contents, keeping the cursor in range. The marker is
+// dropped when it would fall outside the new contents; callers reset it.
 func (l *list) SetItems(items []string) {
 	l.items = items
 	if l.cursor > len(items)-1 {
@@ -20,6 +22,9 @@ func (l *list) SetItems(items []string) {
 	}
 	if l.cursor < 0 {
 		l.cursor = 0
+	}
+	if l.marker > len(items)-1 {
+		l.marker = -1
 	}
 	l.clamp()
 }
@@ -52,6 +57,24 @@ func (l *list) Top() {
 	l.offset = 0
 }
 
+// MoveTo places the cursor on row i, scrolling it into view. Out-of-range
+// indices are ignored.
+func (l *list) MoveTo(i int) {
+	if i < 0 || i >= len(l.items) {
+		return
+	}
+	l.cursor = i
+	l.clamp()
+}
+
+// SetMarker flags the currently-playing row (-1 clears it).
+func (l *list) SetMarker(i int) {
+	if i < -1 || i >= len(l.items) {
+		i = -1
+	}
+	l.marker = i
+}
+
 // Cursor returns the selected index (0 when empty).
 func (l *list) Cursor() int { return l.cursor }
 
@@ -82,11 +105,18 @@ func (l list) View() string {
 
 	var b strings.Builder
 	for i := l.offset; i < end; i++ {
-		if i == l.cursor {
-			b.WriteString("▶ " + selectedStyle.Render(l.items[i]) + "\n")
-			continue
+		switch i {
+		case l.cursor:
+			prefix := "▶ "
+			if i == l.marker {
+				prefix = "♪ " // cursor is sitting on the playing track
+			}
+			b.WriteString(prefix + selectedStyle.Render(l.items[i]) + "\n")
+		case l.marker:
+			b.WriteString("♪ " + playingStyle.Render(l.items[i]) + "\n")
+		default:
+			b.WriteString("  " + l.items[i] + "\n")
 		}
-		b.WriteString("  " + l.items[i] + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

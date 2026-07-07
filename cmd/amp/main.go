@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/helmedeiros/amp/internal/adapter/applemusic"
 	"github.com/helmedeiros/amp/internal/adapter/applescript"
 	"github.com/helmedeiros/amp/internal/adapter/cli"
 	"github.com/helmedeiros/amp/internal/adapter/daemonclient"
@@ -20,6 +21,12 @@ import (
 
 func main() {
 	svc := app.NewService(applescript.New(), store.NewFile(volumeStatePath()))
+
+	// When Apple Music credentials are configured, let the service fill in album
+	// tracks that streaming left out of the local library.
+	if creds, err := applemusic.LoadCreds(applemusic.CredsPath()); err == nil && creds.Valid() {
+		svc.EnableCatalog(applemusic.NewClient(creds))
+	}
 
 	// Serve status from the daemon when it is running (fast, cached); every
 	// other call, and status when the daemon is down, goes direct.

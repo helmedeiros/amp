@@ -11,6 +11,13 @@ import (
 type PlayResult struct {
 	Kind  string // "resume", "playlist", "album", or "track"
 	Label string // playlist/album name or "Artist — Title"; empty for resume
+
+	// Album is populated for the "album" kind: how much of the album was in the
+	// library. Use it to warn when only part of an album could be queued.
+	Album music.AlbumCoverage
+	// AlbumFilled is true when a catalog add was attempted to complete the album
+	// (so the caller can distinguish "still syncing" from "not configured").
+	AlbumFilled bool
 }
 
 // Controller is the driving port: the use-case surface that driving adapters
@@ -47,6 +54,16 @@ type Controller interface {
 	// Albums returns the distinct, sorted albums in the library, each with its
 	// artist (or "Various Artists" when the album's tracks disagree).
 	Albums(ctx context.Context) ([]music.Album, error)
+
+	// CatalogEnabled reports whether Apple Music credentials are configured, so
+	// driving adapters can offer the "add albums from Apple Music" action.
+	CatalogEnabled() bool
+	// ArtistCatalogAlbums returns the artist's catalog albums that are not yet in
+	// the library (the candidates for the per-artist add flow).
+	ArtistCatalogAlbums(ctx context.Context, artist string) ([]music.CatalogAlbum, error)
+	// AddCatalogAlbums adds the given catalog album IDs to the library and returns
+	// how many were added.
+	AddCatalogAlbums(ctx context.Context, ids []string) (int, error)
 
 	Play(ctx context.Context) error
 	Pause(ctx context.Context) error

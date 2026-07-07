@@ -57,6 +57,7 @@ func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 		unmuteCmd(ctrl),
 		shuffleCmd(ctrl),
 		repeatCmd(ctrl),
+		authCmd(),
 		tuiCmd(ctrl, stream),
 	)
 
@@ -148,6 +149,10 @@ func playCmd(ctrl port.Controller) *cobra.Command {
 				fmt.Fprintf(out, "▶ playlist: %s\n", res.Label)
 			case "album":
 				fmt.Fprintf(out, "▶ album: %s\n", res.Label)
+				if res.Album.Partial() {
+					fmt.Fprintf(out, "  only %d of %d tracks are in your library — add the album in Music.app for the rest\n",
+						res.Album.Queued, res.Album.Total)
+				}
 			case "track":
 				fmt.Fprintf(out, "▶ %s\n", res.Label)
 			}

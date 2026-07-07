@@ -32,6 +32,33 @@ type fakePlayer struct {
 	positionSet  float64
 	playStart    int
 	playedName   string
+	albumCover   music.AlbumCoverage
+	coverages    []music.AlbumCoverage // successive AlbumCoverage results (last repeats)
+}
+
+// fakeCatalog records catalog calls for the auto-add tests.
+type fakeCatalog struct {
+	calls        []string
+	resolveID    string
+	resolveErr   error
+	addErr       error
+	artistAlbums []music.CatalogAlbum
+	artistErr    error
+}
+
+func (c *fakeCatalog) ResolveAlbum(_ context.Context, _, _ string) (string, error) {
+	c.calls = append(c.calls, "ResolveAlbum")
+	return c.resolveID, c.resolveErr
+}
+
+func (c *fakeCatalog) AddAlbum(_ context.Context, id string) error {
+	c.calls = append(c.calls, "AddAlbum:"+id)
+	return c.addErr
+}
+
+func (c *fakeCatalog) ArtistAlbums(_ context.Context, _ string) ([]music.CatalogAlbum, error) {
+	c.calls = append(c.calls, "ArtistAlbums")
+	return c.artistAlbums, c.artistErr
 }
 
 func (f *fakePlayer) Status(context.Context) (music.Status, error) {
@@ -65,10 +92,22 @@ func (f *fakePlayer) PlayPlaylist(_ context.Context, name string) error {
 	return nil
 }
 
-func (f *fakePlayer) PlayAlbum(_ context.Context, name string) error {
+func (f *fakePlayer) PlayAlbum(_ context.Context, name string) (music.AlbumCoverage, error) {
 	f.calls = append(f.calls, "PlayAlbum")
 	f.playedName = name
-	return nil
+	return f.albumCover, nil
+}
+
+func (f *fakePlayer) AlbumCoverage(_ context.Context, _ string) (music.AlbumCoverage, error) {
+	f.calls = append(f.calls, "AlbumCoverage")
+	if len(f.coverages) > 0 {
+		cov := f.coverages[0]
+		if len(f.coverages) > 1 {
+			f.coverages = f.coverages[1:]
+		}
+		return cov, nil
+	}
+	return f.albumCover, nil
 }
 
 func (f *fakePlayer) PlayQueueAt(_ context.Context, index int) error {
@@ -242,6 +281,107 @@ func TestServicePlayQueryFallsBackToAlbum(t *testing.T) {
 	assert.Equal(t, "album", res.Kind)
 	assert.Equal(t, "Discovery", res.Label)
 	assert.Equal(t, []string{"Playlists", "Albums", "PlayAlbum"}, fake.calls)
+}
+
+func TestServicePlayQueryReportsAlbumCoverage(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{
+		albums:     []music.Album{{Name: "Discovery"}},
+		albumCover: music.AlbumCoverage{Queued: 2, Total: 11},
+	}
+	svc := app.NewService(fake, &memStore{})
+
+	res, err := svc.PlayQuery(context.Background(), "discovery", 50)
+
+	require.NoError(t, err)
+	assert.Equal(t, music.AlbumCoverage{Queued: 2, Total: 11}, res.Album)
+	assert.True(t, res.Album.Partial())
+}
+
+func TestServicePlayQueryAutoAddsPartialAlbum(t *testing.T) {
+	// Partial album (2 of 11) with a catalog client: resolve, add, await the
+	// sync (coverage rises to 11), then play the now-complete album.
+	defer app.SetAlbumSyncTimingForTest(time.Millisecond, time.Second)()
+
+	fake := &fakePlayer{
+		albums:     []music.Album{{Name: "Franz Ferdinand", Artist: "Franz Ferdinand"}},
+		albumCover: music.AlbumCoverage{Queued: 11, Total: 11},
+		coverages: []music.AlbumCoverage{
+			{Queued: 2, Total: 11},  // detected partial
+			{Queued: 11, Total: 11}, // synced
+		},
+	}
+	cat := &fakeCatalog{resolveID: "315843479"}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableCatalog(cat)
+
+	res, err := svc.PlayQuery(context.Background(), "franz ferdinand", 50)
+
+	require.NoError(t, err)
+	assert.Equal(t, "album", res.Kind)
+	assert.False(t, res.Album.Partial(), "album is complete after the add")
+	assert.Equal(t, []string{"ResolveAlbum", "AddAlbum:315843479"}, cat.calls)
+	assert.Contains(t, fake.calls, "PlayAlbum")
+}
+
+func TestServicePlayQueryDoesNotAddCompleteAlbum(t *testing.T) {
+	// Full album (11 of 11): the catalog is left untouched.
+	fake := &fakePlayer{
+		albums:     []music.Album{{Name: "Franz Ferdinand", Artist: "Franz Ferdinand"}},
+		albumCover: music.AlbumCoverage{Queued: 11, Total: 11},
+		coverages:  []music.AlbumCoverage{{Queued: 11, Total: 11}},
+	}
+	cat := &fakeCatalog{resolveID: "x"}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableCatalog(cat)
+
+	_, err := svc.PlayQuery(context.Background(), "franz ferdinand", 50)
+
+	require.NoError(t, err)
+	assert.Empty(t, cat.calls, "a complete album triggers no catalog calls")
+}
+
+func TestServiceArtistCatalogAlbumsFiltersOwned(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{albums: []music.Album{{Name: "Konk", Artist: "The Kooks"}}}
+	cat := &fakeCatalog{artistAlbums: []music.CatalogAlbum{
+		{ID: "1", Name: "Konk", TrackCount: 14},   // already owned -> filtered
+		{ID: "2", Name: "Listen", TrackCount: 11}, // missing -> kept
+	}}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableCatalog(cat)
+
+	got, err := svc.ArtistCatalogAlbums(context.Background(), "The Kooks")
+
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Listen", got[0].Name)
+}
+
+func TestServiceArtistCatalogAlbumsNeedsCatalog(t *testing.T) {
+	t.Parallel()
+
+	svc := app.NewService(&fakePlayer{}, &memStore{})
+	assert.False(t, svc.CatalogEnabled())
+
+	_, err := svc.ArtistCatalogAlbums(context.Background(), "X")
+	require.Error(t, err)
+}
+
+func TestServiceAddCatalogAlbums(t *testing.T) {
+	t.Parallel()
+
+	cat := &fakeCatalog{}
+	svc := app.NewService(&fakePlayer{}, &memStore{})
+	svc.EnableCatalog(cat)
+
+	n, err := svc.AddCatalogAlbums(context.Background(), []string{"a", "b"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, []string{"AddAlbum:a", "AddAlbum:b"}, cat.calls)
 }
 
 func TestServicePlayQueryFallsBackToTrackSearch(t *testing.T) {

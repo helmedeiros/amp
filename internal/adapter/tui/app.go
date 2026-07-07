@@ -25,6 +25,8 @@ var (
 	trackStyle     = lipgloss.NewStyle().Bold(true)
 	dimStyle       = lipgloss.NewStyle().Faint(true)
 	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	playingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	noticeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 )
 
 // tabID identifies a content tab.
@@ -52,14 +54,44 @@ type (
 		keys   []string // per-row filter keys (lowercased; may include artists)
 		err    error
 	}
-	actionDoneMsg    struct{}
-	queuePlayedMsg   struct{}
+	actionDoneMsg  struct{}
+	queuePlayedMsg struct {
+		notice string // persistent one-line warning (e.g. album still partial)
+		flash  string // transient success line (e.g. album completed)
+	}
 	actionErrMsg     struct{ err error }
 	searchResultsMsg struct {
 		items []string
 		err   error
 	}
+	// workTickMsg animates the loading bar while a play/fill is in flight.
+	workTickMsg struct{}
+	// flashClearMsg clears the transient success line after a short delay.
+	flashClearMsg struct{}
+	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
+	artistAlbumsMsg struct {
+		artist string
+		albums []music.CatalogAlbum
+		err    error
+	}
+	// albumsAddedMsg reports the result of adding picked albums.
+	albumsAddedMsg struct {
+		n   int
+		err error
+	}
 )
+
+// workTick schedules the next animation frame of the loading bar.
+func workTick() tea.Cmd {
+	return tea.Tick(110*time.Millisecond, func(time.Time) tea.Msg { return workTickMsg{} })
+}
+
+// flashDuration is how long the "album complete" confirmation stays up.
+const flashDuration = 4 * time.Second
+
+func clearFlashAfter() tea.Cmd {
+	return tea.Tick(flashDuration, func(time.Time) tea.Msg { return flashClearMsg{} })
+}
 
 // app is the root TUI model: a live header plus tabbed list views.
 type app struct {
@@ -86,6 +118,29 @@ type app struct {
 
 	searchQuery   string
 	searchEditing bool
+
+	// notice is a one-line warning shown below the list (e.g. that only part of an
+	// album was in the library). Cleared on the next tab switch.
+	notice string
+	// flash is a transient success line (e.g. an album was completed); it clears
+	// itself after flashDuration.
+	flash string
+	// working marks that a play/fill is in flight, driving an animated bar.
+	working   bool
+	workFrame int
+	workLabel string
+
+	// picking is the "add albums from Apple Music" overlay for one artist.
+	picking     bool
+	pickArtist  string
+	pickAlbums  []music.CatalogAlbum
+	pickChecked []bool
+	pickCursor  int
+
+	// playingKey is the filter key of the track the status stream last reported
+	// as playing. It lets the Queue follow the track: when the key changes the
+	// cursor jumps to the matching row.
+	playingKey string
 
 	width, height int
 	quitting      bool
@@ -157,6 +212,7 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
 		m.status, m.hasStatus = music.Status(msg), true
+		m.syncQueue(false)
 		return m, waitForStatus(m.stream)
 
 	case streamClosedMsg:
@@ -169,6 +225,9 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keys[msg.tab] = msg.keys
 			m.loaded[msg.tab] = true
 			m.refreshView(msg.tab)
+			if msg.tab == tabQueue {
+				m.syncQueue(true)
+			}
 		}
 		return m, nil
 
@@ -181,15 +240,63 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case queuePlayedMsg:
 		// A play set the queue to the chosen context; show it.
+		m.working = false
 		m.active = tabQueue
 		m.clearFilter()
+		m.notice = msg.notice
+		m.flash = msg.flash
 		m.loaded[tabQueue] = false
-		return m, m.loadTab(tabQueue)
+		cmds := []tea.Cmd{m.loadTab(tabQueue)}
+		if m.flash != "" {
+			cmds = append(cmds, clearFlashAfter())
+		}
+		return m, tea.Batch(cmds...)
+
+	case workTickMsg:
+		if !m.working {
+			return m, nil // stop animating once the play resolves
+		}
+		m.workFrame++
+		return m, workTick()
+
+	case flashClearMsg:
+		m.flash = ""
+		return m, nil
+
+	case artistAlbumsMsg:
+		m.working = false
+		if msg.err != nil {
+			m.notice = "Apple Music: " + msg.err.Error()
+			return m, nil
+		}
+		if len(msg.albums) == 0 {
+			m.flash = "✓ " + msg.artist + " — all albums already in your library"
+			return m, clearFlashAfter()
+		}
+		m.picking = true
+		m.pickArtist = msg.artist
+		m.pickAlbums = msg.albums
+		m.pickChecked = make([]bool, len(msg.albums))
+		for i := range m.pickChecked {
+			m.pickChecked[i] = true // preselect every missing album; user unticks
+		}
+		m.pickCursor = 0
+		return m, nil
+
+	case albumsAddedMsg:
+		m.working = false
+		if msg.err != nil {
+			m.notice = "Apple Music: " + msg.err.Error()
+			return m, nil
+		}
+		m.flash = fmt.Sprintf("✓ added %d album(s) from Apple Music — syncing; press r to reload shortly", msg.n)
+		return m, clearFlashAfter()
 
 	case actionDoneMsg:
 		return m, nil
 
 	case actionErrMsg:
+		m.working = false
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -204,6 +311,9 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.picking {
+		return m.handlePickInput(msg)
+	}
 	if m.active == tabSearch && m.searchEditing {
 		return m.handleSearchInput(msg)
 	}
@@ -239,7 +349,15 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.lists[m.active].MoveUp()
 	case "enter":
-		return m, m.playSelection()
+		cmd := m.playSelection()
+		if cmd != nil && m.active == tabAlbums {
+			// Album plays may pause to fill missing tracks from Apple Music; show
+			// an animated bar until the play resolves.
+			m.working, m.workFrame, m.flash = true, 0, ""
+			m.workLabel = "completing album via Apple Music…"
+			return m, tea.Batch(cmd, workTick())
+		}
+		return m, cmd
 	case " ":
 		return m, actionCmd(func() error { return m.ctrl.Toggle(m.ctx) })
 	case "r":
@@ -247,8 +365,96 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loaded[m.active] = false
 			return m, m.loadTab(m.active)
 		}
+	case "a":
+		if m.active == tabArtists {
+			return m.startAddAlbums()
+		}
 	}
 	return m, nil
+}
+
+// startAddAlbums begins the "add albums from Apple Music" flow for the selected
+// artist: it fetches their catalog albums (async, with a loading bar). It no-ops
+// with a hint when Apple Music is not configured.
+func (m app) startAddAlbums() (tea.Model, tea.Cmd) {
+	l := &m.lists[tabArtists]
+	if l.Len() == 0 {
+		return m, nil
+	}
+	idx := m.orig(l.Cursor())
+	vals := m.values[tabArtists]
+	if idx >= len(vals) {
+		return m, nil
+	}
+	if !m.ctrl.CatalogEnabled() {
+		m.notice = "Apple Music not connected — run: amp auth apple-music"
+		return m, nil
+	}
+	artist := vals[idx]
+	m.working, m.workFrame, m.workLabel, m.flash = true, 0, "fetching "+artist+"’s albums…", ""
+	ctx, ctrl := m.ctx, m.ctrl
+	fetch := func() tea.Msg {
+		albums, err := ctrl.ArtistCatalogAlbums(ctx, artist)
+		return artistAlbumsMsg{artist: artist, albums: albums, err: err}
+	}
+	return m, tea.Batch(fetch, workTick())
+}
+
+// handlePickInput drives the album picker overlay.
+func (m app) handlePickInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		m.quitting = true
+		return m, tea.Quit
+	case "esc", "q":
+		m.picking = false
+	case "j", "down":
+		if m.pickCursor < len(m.pickAlbums)-1 {
+			m.pickCursor++
+		}
+	case "k", "up":
+		if m.pickCursor > 0 {
+			m.pickCursor--
+		}
+	case " ":
+		m.pickChecked[m.pickCursor] = !m.pickChecked[m.pickCursor]
+	case "a":
+		allOn := true
+		for _, c := range m.pickChecked {
+			if !c {
+				allOn = false
+				break
+			}
+		}
+		for i := range m.pickChecked {
+			m.pickChecked[i] = !allOn // toggle all on/off
+		}
+	case "enter":
+		return m.confirmAddAlbums()
+	}
+	return m, nil
+}
+
+// confirmAddAlbums adds the checked albums (async, with a loading bar) and closes
+// the picker.
+func (m app) confirmAddAlbums() (tea.Model, tea.Cmd) {
+	var ids []string
+	for i, a := range m.pickAlbums {
+		if m.pickChecked[i] {
+			ids = append(ids, a.ID)
+		}
+	}
+	m.picking = false
+	if len(ids) == 0 {
+		return m, nil
+	}
+	m.working, m.workFrame, m.workLabel = true, 0, fmt.Sprintf("adding %d album(s) to your library…", len(ids))
+	ctx, ctrl := m.ctx, m.ctrl
+	add := func() tea.Msg {
+		n, err := ctrl.AddCatalogAlbums(ctx, ids)
+		return albumsAddedMsg{n: n, err: err}
+	}
+	return m, tea.Batch(add, workTick())
 }
 
 // handleSearchInput edits the query while the Search tab is in edit mode.
@@ -351,6 +557,60 @@ func (m *app) applyView() {
 	m.viewMap = vm
 	m.lists[tab].SetItems(shown)
 	m.lists[tab].Top()
+	if tab == tabQueue {
+		m.lists[tabQueue].SetMarker(m.playingQueueRow())
+	}
+}
+
+// playingQueueRow returns the visible Queue row of the currently playing track,
+// or -1 when nothing is playing or the track is not in the queue. It honours the
+// active filter's view mapping so the marker lands on the right visible row.
+func (m app) playingQueueRow() int {
+	if !m.hasStatus || !m.status.HasTrack() {
+		return -1
+	}
+	want := trackKey(m.status.Track)
+	full := -1
+	for i, k := range m.keys[tabQueue] {
+		if k == want {
+			full = i
+			break
+		}
+	}
+	if full < 0 {
+		return -1
+	}
+	if m.active != tabQueue || m.viewMap == nil {
+		return full
+	}
+	for row, orig := range m.viewMap {
+		if orig == full {
+			return row
+		}
+	}
+	return -1 // playing track is filtered out of view
+}
+
+// syncQueue refreshes the Queue's playing marker from the current status. When
+// focus is set, or the playing track has just changed, it also moves the cursor
+// onto that row so the Queue follows what is playing. An in-progress filter edit
+// is left alone so typing does not fight the cursor.
+func (m *app) syncQueue(focus bool) {
+	row := m.playingQueueRow()
+	m.lists[tabQueue].SetMarker(row)
+
+	key := ""
+	if m.hasStatus && m.status.HasTrack() {
+		key = trackKey(m.status.Track)
+	}
+	if key != m.playingKey {
+		focus = true // the playing track changed; jump to it
+	}
+	m.playingKey = key
+
+	if focus && row >= 0 && m.active == tabQueue && !m.filtering {
+		m.lists[tabQueue].MoveTo(row)
+	}
 }
 
 // orig maps a visible row index to its index in the full item slice.
@@ -394,10 +654,33 @@ func (m app) playSelection() tea.Cmd {
 		return nil
 	}
 	name := vals[idx]
-	return queueCmd(func() error {
-		_, err := m.ctrl.PlayQuery(m.ctx, name, searchLimit)
-		return err
-	})
+	ctx, ctrl := m.ctx, m.ctrl
+	return func() tea.Msg {
+		res, err := ctrl.PlayQuery(ctx, name, searchLimit)
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		notice, flash := albumFeedback(res)
+		return queuePlayedMsg{notice: notice, flash: flash}
+	}
+}
+
+// albumFeedback turns an album play result into user feedback: a transient
+// success flash when the album is complete, or a persistent warning when it is
+// still partial (distinguishing "still syncing" from "not configured").
+func albumFeedback(res port.PlayResult) (notice, flash string) {
+	if res.Kind != "album" || res.Album.Total == 0 {
+		return "", ""
+	}
+	c := res.Album
+	switch {
+	case !c.Partial():
+		return "", fmt.Sprintf("✓ %s — all %d tracks in your library", res.Label, c.Total)
+	case res.AlbumFilled:
+		return fmt.Sprintf("%d of %d tracks — the rest are still syncing from Apple Music; press r to reload", c.Queued, c.Total), ""
+	default:
+		return fmt.Sprintf("only %d of %d tracks of %q are in your library — run: amp auth apple-music, or add it in Music.app", c.Queued, c.Total, res.Label), ""
+	}
 }
 
 // actionCmd runs an action that does not change the queue (e.g. play/pause).
@@ -426,6 +709,8 @@ func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	m.filtering = false
 	m.filterQuery = ""
 	m.viewMap = nil
+	m.notice = ""
+	m.picking = false
 	if to == tabSearch {
 		// Land in navigation mode so number keys still switch tabs; press / to
 		// start typing a query.
@@ -435,6 +720,9 @@ func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 		return m, m.loadTab(to)
 	}
 	m.lists[to].SetItems(m.items[to]) // clear any lingering filter view
+	if to == tabQueue {
+		m.syncQueue(true)
+	}
 	return m, nil
 }
 
@@ -459,6 +747,12 @@ func (m app) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(renderTabBar(m.active))
 	b.WriteString("\n\n")
+	if m.picking {
+		b.WriteString(m.renderPicker())
+		b.WriteString("\n\n")
+		b.WriteString(dimStyle.Render("j/k move · space toggle · a all/none · enter add · esc cancel"))
+		return b.String()
+	}
 	if m.active == tabSearch {
 		b.WriteString(renderSearchPrompt(m.searchQuery, m.searchEditing))
 		b.WriteString("\n\n")
@@ -468,8 +762,49 @@ func (m app) View() string {
 	}
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
+	switch {
+	case m.working:
+		label := m.workLabel
+		if label == "" {
+			label = "working…"
+		}
+		b.WriteString(playingStyle.Render(loadBar(m.workFrame, 24)) + "  " + dimStyle.Render(label))
+		b.WriteString("\n\n")
+	case m.flash != "":
+		b.WriteString(playingStyle.Render(m.flash))
+		b.WriteString("\n\n")
+	case m.notice != "":
+		b.WriteString(noticeStyle.Render(m.notice))
+		b.WriteString("\n\n")
+	}
 	b.WriteString(dimStyle.Render(m.hint()))
 	return b.String()
+}
+
+// renderPicker draws the "add albums from Apple Music" checklist.
+func (m app) renderPicker() string {
+	selected := 0
+	for _, c := range m.pickChecked {
+		if c {
+			selected++
+		}
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", trackStyle.Render("Add "+m.pickArtist+" albums from Apple Music"))
+	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render(fmt.Sprintf("%d of %d selected · not in your library", selected, len(m.pickAlbums))))
+	for i, a := range m.pickAlbums {
+		box := "[ ]"
+		if m.pickChecked[i] {
+			box = "[x]"
+		}
+		line := fmt.Sprintf("%s %s  %s", box, a.Name, dimStyle.Render(fmt.Sprintf("%d tracks", a.TrackCount)))
+		if i == m.pickCursor {
+			b.WriteString("▶ " + selectedStyle.Render(line) + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m app) hint() string {
@@ -486,7 +821,14 @@ func (m app) hint() string {
 	if m.active == tabSearch {
 		find = "search"
 	}
-	return "tab/1-5 switch · j/k move · / " + find + " · enter play · space pause · q quit"
+	base := "tab/1-5 switch · j/k move · / " + find + " · enter play · space pause"
+	if m.active != tabSearch {
+		base += " · r reload"
+	}
+	if m.active == tabArtists {
+		base += " · a add albums"
+	}
+	return base + " · q quit"
 }
 
 func renderFilterPrompt(query string, editing bool) string {
@@ -624,9 +966,15 @@ func albumKeys(albums []music.Album) []string {
 func trackKeys(tracks []music.Track) []string {
 	keys := make([]string, len(tracks))
 	for i, t := range tracks {
-		keys[i] = strings.ToLower(t.Artist + " " + t.Album + " " + t.Name)
+		keys[i] = trackKey(t)
 	}
 	return keys
+}
+
+// trackKey is the case-insensitive artist+album+title key used both to filter
+// the queue and to locate the currently playing track within it.
+func trackKey(t music.Track) string {
+	return strings.ToLower(t.Artist + " " + t.Album + " " + t.Name)
 }
 
 // lowerAll returns a lowercased copy of each string, for use as filter keys.
@@ -648,6 +996,30 @@ func artistTitle(t music.Track) string {
 func clock(d time.Duration) string {
 	total := int(d.Round(time.Second).Seconds())
 	return fmt.Sprintf("%02d:%02d", total/60, total%60)
+}
+
+// loadBar renders an indeterminate progress bar: a lit window that slides back
+// and forth across a track, animated by frame, so ongoing work reads as motion.
+func loadBar(frame, width int) string {
+	if width < 8 {
+		width = 8
+	}
+	const win = 6
+	span := 2 * (width - win) // one full there-and-back cycle
+	p := frame % span
+	pos := p
+	if p > width-win {
+		pos = span - p // reflect on the return trip
+	}
+	var b strings.Builder
+	for i := 0; i < width; i++ {
+		if i >= pos && i < pos+win {
+			b.WriteString("▓")
+		} else {
+			b.WriteString("░")
+		}
+	}
+	return b.String()
 }
 
 func bar(fraction float64, width int) string {
