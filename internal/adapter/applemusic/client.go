@@ -195,6 +195,13 @@ func baseAlbumName(name string) string {
 	}
 }
 
+// Verify checks that the stored credentials still authenticate, by reading the
+// account storefront. A non-nil error means the token is missing/expired.
+func (c *Client) Verify(ctx context.Context) error {
+	_, err := c.apiGet(ctx, "/v1/me/storefront")
+	return err
+}
+
 // AddAlbum adds the catalog album to the user's library. Apple returns 202
 // Accepted; the tracks appear once iCloud Music Library syncs.
 func (c *Client) AddAlbum(ctx context.Context, albumID string) error {

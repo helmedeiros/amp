@@ -69,5 +69,27 @@ sanctioned Apple integration; the token expires after ~180 days.`),
 		},
 	}
 	cmd.Flags().StringVar(&token, "token", "", "media-user-token (skips the interactive prompt)")
+	cmd.AddCommand(authAppleMusicStatusCmd())
 	return cmd
+}
+
+// authAppleMusicStatusCmd reports whether Apple Music is connected, verifying the
+// stored token against the API.
+func authAppleMusicStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show whether Apple Music is connected and the token still works",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			creds, err := applemusic.LoadCreds(applemusic.CredsPath())
+			if err != nil {
+				return err
+			}
+			var tokenErr error
+			if creds.Valid() {
+				tokenErr = applemusic.NewClient(creds).Verify(cmd.Context())
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), applemusic.StatusMessage(creds, tokenErr))
+			return nil
+		},
+	}
 }
