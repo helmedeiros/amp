@@ -144,6 +144,9 @@ type app struct {
 
 	width, height int
 	quitting      bool
+
+	// catalogOn reflects whether Apple Music is connected, shown in the header.
+	catalogOn bool
 }
 
 func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) app {
@@ -153,12 +156,13 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 	}
 	return app{
 		ctx: ctx, ctrl: ctrl, stream: stream,
-		lists:  lists,
-		items:  make([][]string, len(tabNames)),
-		values: make([][]string, len(tabNames)),
-		keys:   make([][]string, len(tabNames)),
-		loaded: make([]bool, len(tabNames)),
-		width:  80, height: 24,
+		lists:     lists,
+		items:     make([][]string, len(tabNames)),
+		values:    make([][]string, len(tabNames)),
+		keys:      make([][]string, len(tabNames)),
+		loaded:    make([]bool, len(tabNames)),
+		catalogOn: ctrl.CatalogEnabled(),
+		width:     80, height: 24,
 	}
 }
 
@@ -762,7 +766,7 @@ func (m app) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(renderHeader(m.status, m.hasStatus))
+	b.WriteString(renderHeader(m.status, m.hasStatus, m.catalogOn))
 	b.WriteString("\n\n")
 	b.WriteString(renderTabBar(m.active))
 	b.WriteString("\n\n")
@@ -885,7 +889,7 @@ func renderTabBar(active tabID) string {
 	return strings.Join(parts, "   ")
 }
 
-func renderHeader(s music.Status, hasStatus bool) string {
+func renderHeader(s music.Status, hasStatus, catalogOn bool) string {
 	if !hasStatus {
 		return dimStyle.Render("connecting…")
 	}
@@ -909,6 +913,11 @@ func renderHeader(s music.Status, hasStatus bool) string {
 	if s.Repeat != music.RepeatOff {
 		b.WriteString(dimStyle.Render("  repeat " + s.Repeat.String()))
 	}
+	tag := "  · Apple Music off"
+	if catalogOn {
+		tag = "  · Apple Music ✓"
+	}
+	b.WriteString(dimStyle.Render(tag))
 	return b.String()
 }
 

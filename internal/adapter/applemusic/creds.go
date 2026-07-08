@@ -90,6 +90,20 @@ func Authenticate(ctx context.Context, mediaUserToken string) (Creds, error) {
 	return Creds{MediaUserToken: mediaUserToken, Storefront: sr.Data[0].ID}, nil
 }
 
+// StatusMessage renders a one-line connection summary from stored credentials
+// and the result of a token check (tokenErr is the error from Client.Verify, or
+// nil when the token still works). It is pure so it can be unit-tested.
+func StatusMessage(creds Creds, tokenErr error) string {
+	switch {
+	case !creds.Valid():
+		return "Apple Music: not connected. Run `amp auth apple-music` to connect."
+	case tokenErr != nil:
+		return fmt.Sprintf("Apple Music: connected (storefront %s) but the token was rejected — re-run `amp auth apple-music`.", creds.Storefront)
+	default:
+		return fmt.Sprintf("Apple Music: connected ✓ (storefront %s).", creds.Storefront)
+	}
+}
+
 // CredsPath returns where credentials are stored, under the user config dir.
 func CredsPath() string {
 	dir, err := os.UserConfigDir()

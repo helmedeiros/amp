@@ -443,6 +443,18 @@ func TestAppSpaceToggles(t *testing.T) {
 	assert.Equal(t, []string{"Toggle"}, ctrl.calls)
 }
 
+func TestAppHeaderShowsAppleMusicConnection(t *testing.T) {
+	t.Parallel()
+
+	on := newTestApp(&stubController{catalogEnabled: true})
+	next, _ := on.Update(statusMsg(playingStatus()))
+	assert.Contains(t, next.(app).View(), "Apple Music ✓")
+
+	off := newTestApp(&stubController{})
+	next, _ = off.Update(statusMsg(playingStatus()))
+	assert.Contains(t, next.(app).View(), "Apple Music off")
+}
+
 func TestAppHeaderUpdatesFromStatus(t *testing.T) {
 	t.Parallel()
 
