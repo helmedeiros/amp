@@ -21,7 +21,8 @@ const DefaultUnmuteVolume = 50
 type Service struct {
 	player  port.Player
 	volume  port.VolumeStore
-	catalog port.Catalog // optional; nil unless Apple Music auth is configured
+	catalog port.Catalog    // optional; nil unless Apple Music auth is configured
+	sc      port.SoundCloud // optional; nil unless the import tools are wired
 }
 
 // NewService wires the service to a Player and a VolumeStore.
@@ -33,6 +34,63 @@ func NewService(player port.Player, volume port.VolumeStore) *Service {
 // partly-in-library album first adds the missing tracks. Optional: without it,
 // partial albums are played as-is and only reported.
 func (s *Service) EnableCatalog(c port.Catalog) { s.catalog = c }
+
+// EnableSoundCloud attaches a SoundCloud importer used by ImportSoundCloud.
+func (s *Service) EnableSoundCloud(sc port.SoundCloud) { s.sc = sc }
+
+// Attribute derives the name/artist/album for an imported track from its
+// SoundCloud title: a "Band - Song" title is credited to the band (album = band
+// too); anything else is credited to soloArtist.
+func Attribute(title, soloArtist string) music.Attribution {
+	if i := strings.Index(title, " - "); i >= 0 {
+		band, song := strings.TrimSpace(title[:i]), strings.TrimSpace(title[i+len(" - "):])
+		if band != "" && song != "" {
+			return music.Attribution{Name: song, Artist: band, Album: band}
+		}
+	}
+	return music.Attribution{Name: strings.TrimSpace(title), Artist: soloArtist, Album: soloArtist}
+}
+
+// ImportSoundCloud imports the tracks at url into the library and a playlist,
+// crediting non-band tracks to soloArtist (falling back to each track's
+// uploader). Tracks already in the library are skipped, so it is safe to re-run.
+func (s *Service) ImportSoundCloud(ctx context.Context, url, playlist, soloArtist, destDir string) (port.ImportResult, error) {
+	if s.sc == nil {
+		return port.ImportResult{}, fmt.Errorf("soundcloud import not available")
+	}
+	if strings.TrimSpace(playlist) == "" {
+		playlist = "SoundCloud"
+	}
+	tracks, err := s.sc.List(ctx, url)
+	if err != nil {
+		return port.ImportResult{}, err
+	}
+
+	var res port.ImportResult
+	for _, t := range tracks {
+		solo := soloArtist
+		if solo == "" {
+			solo = t.Uploader
+		}
+		attr := Attribute(t.Title, solo)
+
+		if exists, err := s.player.TrackExists(ctx, attr.Name, attr.Artist); err == nil && exists {
+			res.Skipped++
+			continue
+		}
+		path, err := s.sc.Fetch(ctx, t.URL, destDir, attr)
+		if err != nil {
+			res.Failed++
+			continue
+		}
+		if err := s.player.AddFile(ctx, path, playlist); err != nil {
+			res.Failed++
+			continue
+		}
+		res.Imported = append(res.Imported, attr.Artist+" — "+attr.Name)
+	}
+	return res, nil
+}
 
 // albumSyncTimeout bounds how long a play waits for added tracks to sync into
 // the library before falling back to playing what is already there.

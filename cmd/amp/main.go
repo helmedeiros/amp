@@ -12,6 +12,7 @@ import (
 	"github.com/helmedeiros/amp/internal/adapter/applescript"
 	"github.com/helmedeiros/amp/internal/adapter/cli"
 	"github.com/helmedeiros/amp/internal/adapter/daemonclient"
+	"github.com/helmedeiros/amp/internal/adapter/soundcloud"
 	"github.com/helmedeiros/amp/internal/adapter/store"
 	"github.com/helmedeiros/amp/internal/app"
 	"github.com/helmedeiros/amp/internal/daemon"
@@ -27,6 +28,10 @@ func main() {
 	if creds, err := applemusic.LoadCreds(applemusic.CredsPath()); err == nil && creds.Valid() {
 		svc.EnableCatalog(applemusic.NewClient(creds))
 	}
+
+	// SoundCloud import runs through external tools; wiring it is cheap and the
+	// command checks the tools are present before doing anything.
+	svc.EnableSoundCloud(soundcloud.New())
 
 	// Serve status from the daemon when it is running (fast, cached); every
 	// other call, and status when the daemon is down, goes direct.

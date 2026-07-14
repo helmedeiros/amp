@@ -93,6 +93,28 @@ func (p *Player) PlayAlbum(ctx context.Context, name string) (music.AlbumCoverag
 	return music.AlbumCoverage{Queued: res.Queued, Total: res.Total}, nil
 }
 
+// AddFile imports an audio file into the library and the named playlist.
+func (p *Player) AddFile(ctx context.Context, path, playlist string) error {
+	_, err := p.run.Run(ctx, javaScript, addFileScript(path, playlist))
+	return err
+}
+
+// TrackExists reports whether a track with the given name and artist is already
+// in the library.
+func (p *Player) TrackExists(ctx context.Context, name, artist string) (bool, error) {
+	out, err := p.run.Run(ctx, javaScript, trackExistsScript(name, artist))
+	if err != nil {
+		return false, err
+	}
+	var res struct {
+		Exists bool `json:"exists"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return false, fmt.Errorf("decode track exists: %w", err)
+	}
+	return res.Exists, nil
+}
+
 // AlbumCoverage reports how much of the named album is in the library without
 // changing playback.
 func (p *Player) AlbumCoverage(ctx context.Context, name string) (music.AlbumCoverage, error) {

@@ -65,6 +65,10 @@ type Controller interface {
 	// how many were added.
 	AddCatalogAlbums(ctx context.Context, ids []string) (int, error)
 
+	// ImportSoundCloud imports the tracks at url into the library and a playlist,
+	// crediting non-band tracks to soloArtist, and returns a summary.
+	ImportSoundCloud(ctx context.Context, url, playlist, soloArtist, destDir string) (ImportResult, error)
+
 	Play(ctx context.Context) error
 	Pause(ctx context.Context) error
 	Toggle(ctx context.Context) error

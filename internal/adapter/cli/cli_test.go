@@ -110,8 +110,13 @@ func (f *fakeController) ArtistCatalogAlbums(context.Context, string) ([]music.C
 	return nil, nil
 }
 func (f *fakeController) AddCatalogAlbums(context.Context, []string) (int, error) { return 0, nil }
-func (f *fakeController) Play(context.Context) error                              { f.calls = append(f.calls, "Play"); return nil }
-func (f *fakeController) Pause(context.Context) error                             { f.calls = append(f.calls, "Pause"); return nil }
+func (f *fakeController) ImportSoundCloud(_ context.Context, url, _, _, _ string) (port.ImportResult, error) {
+	f.calls = append(f.calls, "ImportSoundCloud")
+	f.playQuery = url
+	return port.ImportResult{}, nil
+}
+func (f *fakeController) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
+func (f *fakeController) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
 func (f *fakeController) Toggle(context.Context) error {
 	f.calls = append(f.calls, "Toggle")
 	return nil

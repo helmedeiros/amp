@@ -51,6 +51,13 @@ type Player interface {
 	// artist (or "Various Artists" when the album's tracks disagree).
 	Albums(ctx context.Context) ([]music.Album, error)
 
+	// AddFile imports an audio file into the library and the named playlist
+	// (creating the playlist when absent).
+	AddFile(ctx context.Context, path, playlist string) error
+	// TrackExists reports whether the library already holds a track with the
+	// given name and artist (used to keep imports idempotent).
+	TrackExists(ctx context.Context, name, artist string) (bool, error)
+
 	// Play resumes or starts playback.
 	Play(ctx context.Context) error
 	// Pause halts playback, keeping the current track loaded.
