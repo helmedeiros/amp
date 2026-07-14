@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-14
+
+### Added
+
+- **Apple Music connection (`amp auth apple-music`).** Connect amp to your Apple
+  Music account (stores a `media-user-token`) so it can reach the catalog;
+  `amp auth apple-music status` verifies the token still works. The TUI header
+  shows `Apple Music ✓` when connected.
+- **Complete partly-owned albums automatically.** Playing an album that
+  streaming only partly added to your library first pulls the missing tracks
+  from the Apple Music catalog, waits for iCloud to sync, then plays the full
+  album. Without a connection it plays what's there and warns.
+- **Add an artist's missing albums.** On the Artists or Albums tab, press `a` to
+  fetch an artist's Apple Music discography (singles excluded, editions
+  collapsed) and pick which not-yet-in-library albums to add.
+- **Import SoundCloud uploads (`amp soundcloud import <url>`).** Download your
+  own SoundCloud tracks (via yt-dlp + ffmpeg), tag them (a `Band - Song` title
+  is credited to the band; others to `--solo-artist`), and add them to your
+  library and a playlist. Idempotent — re-run to pick up new uploads.
+- **TUI: follow the playing track.** The Queue marks the current track and moves
+  to it as playback advances. Album plays show a loading bar and a self-clearing
+  confirmation. The footer documents `r reload` and `a add albums`.
+
+### Changed
+
+- `play <album>` now reports when an album is only partly in your library
+  (`only N of M tracks…`).
+
 ## [0.5.0] - 2026-07-05
 
 ### Added
@@ -95,6 +123,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.6.0]: https://github.com/helmedeiros/amp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/helmedeiros/amp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/helmedeiros/amp/releases/tag/v0.4.0
 [0.3.1]: https://github.com/helmedeiros/amp/releases/tag/v0.3.1
