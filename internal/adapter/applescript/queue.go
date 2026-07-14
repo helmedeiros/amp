@@ -137,6 +137,41 @@ JSON.stringify({queued: tracks.length, total: total});
 `, n, qn, qn)
 }
 
+// addFileScript imports a local audio file into the library and the named
+// playlist, creating the playlist when it does not exist.
+func addFileScript(path, playlist string) string {
+	p, _ := json.Marshal(path)
+	pn, _ := json.Marshal(playlist)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+let pl;
+try { pl = Music.userPlaylists.byName(%s); pl.name(); }
+catch (e) { pl = Music.make({new: 'playlist', withProperties: {name: %s}}); }
+Music.add([Path(%s)], {to: pl});
+JSON.stringify({added: true});
+`, pn, pn, p)
+}
+
+// trackExistsScript reports whether a track with the given name and artist is
+// already in the library. Music's `whose` rejects two criteria at once, so it
+// filters by name and matches the artist in JS.
+func trackExistsScript(name, artist string) string {
+	n, _ := json.Marshal(name)
+	a, _ := json.Marshal(artist)
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const lib = Music.libraryPlaylists[0];
+let found = false;
+try {
+  const want = %s;
+  for (const t of lib.tracks.whose({name: %s})()) {
+    try { if (t.artist() === want) { found = true; break; } } catch (e) {}
+  }
+} catch (e) {}
+JSON.stringify({exists: found});
+`, a, n)
+}
+
 // albumCoverageScript counts the named album's tracks in the library and reads
 // the album's own track count (highest "track N of M"), without touching
 // playback. It uses a direct library query rather than search so the count is

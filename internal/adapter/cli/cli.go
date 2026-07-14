@@ -58,6 +58,7 @@ func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 		shuffleCmd(ctrl),
 		repeatCmd(ctrl),
 		authCmd(),
+		soundcloudCmd(ctrl),
 		tuiCmd(ctrl, stream),
 	)
 

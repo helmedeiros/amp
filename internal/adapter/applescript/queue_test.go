@@ -99,6 +99,29 @@ func TestPlayAlbumScript(t *testing.T) {
 	assert.Contains(t, script, "pl.play();")
 }
 
+func TestAddFileAndTrackExistsScripts(t *testing.T) {
+	t.Parallel()
+
+	add := addFileScript("/Music/x.mp3", "SoundCloud")
+	assert.Contains(t, add, `Music.userPlaylists.byName("SoundCloud")`)
+	assert.Contains(t, add, `Music.add([Path("/Music/x.mp3")], {to: pl})`)
+
+	ex := trackExistsScript("O ere", "Platoon")
+	assert.Contains(t, ex, `whose({name: "O ere"})`)
+	assert.Contains(t, ex, `const want = "Platoon"`)
+	assert.Contains(t, ex, `t.artist() === want`)
+}
+
+func TestPlayerTrackExists(t *testing.T) {
+	t.Parallel()
+
+	fp := &fakeRunner{out: []byte(`{"exists":true}`)}
+	got, err := newPlayer(fp).TrackExists(context.Background(), "O ere", "Platoon")
+	require.NoError(t, err)
+	assert.True(t, got)
+	assert.Contains(t, fp.calls[0].script, `"O ere"`)
+}
+
 func TestPlayerPlayPlaylistAndAlbum(t *testing.T) {
 	t.Parallel()
 

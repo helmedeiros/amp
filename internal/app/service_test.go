@@ -34,6 +34,27 @@ type fakePlayer struct {
 	playedName   string
 	albumCover   music.AlbumCoverage
 	coverages    []music.AlbumCoverage // successive AlbumCoverage results (last repeats)
+	addedFiles   []string
+	existing     map[string]bool // track name -> already in library
+}
+
+// fakeSoundCloud is a stub SoundCloud importer for the import test.
+type fakeSoundCloud struct {
+	tracks   []music.SoundCloudTrack
+	fetched  []string
+	fetchErr error
+}
+
+func (f *fakeSoundCloud) List(context.Context, string) ([]music.SoundCloudTrack, error) {
+	return f.tracks, nil
+}
+
+func (f *fakeSoundCloud) Fetch(_ context.Context, trackURL, destDir string, tag music.Attribution) (string, error) {
+	if f.fetchErr != nil {
+		return "", f.fetchErr
+	}
+	f.fetched = append(f.fetched, tag.Artist+"/"+tag.Album+"/"+tag.Name)
+	return destDir + "/" + tag.Name + ".mp3", nil
 }
 
 // fakeCatalog records catalog calls for the auto-add tests.
@@ -145,6 +166,17 @@ func (f *fakePlayer) Artists(context.Context) ([]string, error) {
 func (f *fakePlayer) Albums(context.Context) ([]music.Album, error) {
 	f.calls = append(f.calls, "Albums")
 	return f.albums, nil
+}
+
+func (f *fakePlayer) AddFile(_ context.Context, path, playlist string) error {
+	f.calls = append(f.calls, "AddFile")
+	f.addedFiles = append(f.addedFiles, path+"->"+playlist)
+	return nil
+}
+
+func (f *fakePlayer) TrackExists(_ context.Context, name, _ string) (bool, error) {
+	f.calls = append(f.calls, "TrackExists")
+	return f.existing[name], nil
 }
 func (f *fakePlayer) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
 func (f *fakePlayer) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
@@ -382,6 +414,62 @@ func TestServiceAddCatalogAlbums(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
 	assert.Equal(t, []string{"AddAlbum:a", "AddAlbum:b"}, cat.calls)
+}
+
+func TestAttribute(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, music.Attribution{Name: "E.U.A.", Artist: "Platoon", Album: "Platoon"},
+		app.Attribute("Platoon - E.U.A.", "Solo"))
+	assert.Equal(t, music.Attribution{Name: "Blue Smile", Artist: "She Can Read", Album: "She Can Read"},
+		app.Attribute("She Can Read - Blue Smile", "Solo"))
+	assert.Equal(t, music.Attribution{Name: "O ere", Artist: "Helio Medeiros", Album: "Helio Medeiros"},
+		app.Attribute("O ere", "Helio Medeiros"))
+}
+
+func TestServiceImportSoundCloud(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{existing: map[string]bool{"Old Song": true}}
+	sc := &fakeSoundCloud{tracks: []music.SoundCloudTrack{
+		{URL: "u1", Title: "Platoon - E.U.A.", Uploader: "Helio Cabral"},
+		{URL: "u2", Title: "O ere", Uploader: "Helio Cabral"},
+		{URL: "u3", Title: "Old Song", Uploader: "Helio Cabral"}, // already in library
+	}}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableSoundCloud(sc)
+
+	res, err := svc.ImportSoundCloud(context.Background(), "profile", "SoundCloud", "Roberta Medeiros", "/tmp")
+
+	require.NoError(t, err)
+	assert.Len(t, res.Imported, 2)
+	assert.Equal(t, 1, res.Skipped)
+	assert.Equal(t, 0, res.Failed)
+	// band -> band; solo -> the given solo artist
+	assert.Contains(t, sc.fetched, "Platoon/Platoon/E.U.A.")
+	assert.Contains(t, sc.fetched, "Roberta Medeiros/Roberta Medeiros/O ere")
+}
+
+func TestServiceImportSoundCloudFallsBackToUploader(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{}
+	sc := &fakeSoundCloud{tracks: []music.SoundCloudTrack{{URL: "u", Title: "Catedral", Uploader: "Helio Cabral"}}}
+	svc := app.NewService(fake, &memStore{})
+	svc.EnableSoundCloud(sc)
+
+	_, err := svc.ImportSoundCloud(context.Background(), "p", "", "", "/tmp") // no solo artist
+
+	require.NoError(t, err)
+	assert.Contains(t, sc.fetched, "Helio Cabral/Helio Cabral/Catedral", "uploader is used when no solo artist given")
+}
+
+func TestServiceImportSoundCloudNeedsAdapter(t *testing.T) {
+	t.Parallel()
+
+	svc := app.NewService(&fakePlayer{}, &memStore{})
+	_, err := svc.ImportSoundCloud(context.Background(), "p", "", "", "/tmp")
+	require.Error(t, err)
 }
 
 func TestServicePlayQueryFallsBackToTrackSearch(t *testing.T) {
