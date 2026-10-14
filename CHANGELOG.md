@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-14
+
+### Fixed
+
+- Dropped a dangling `itunesScript` symlink left behind when the iTunes-era
+  shell scripts were removed in 0.1.0.
+
+### Changed
+
+- CI installs golangci-lint v2.13.2 from the module proxy, matching a current
+  local toolchain, and the test fakes are formatted to that gofumpt.
+
 ## [0.6.0] - 2026-07-14
 
 ### Added
@@ -123,6 +135,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.6.1]: https://github.com/helmedeiros/amp/releases/tag/v0.6.1
 [0.6.0]: https://github.com/helmedeiros/amp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/helmedeiros/amp/releases/tag/v0.5.0
 [0.4.0]: https://github.com/helmedeiros/amp/releases/tag/v0.4.0

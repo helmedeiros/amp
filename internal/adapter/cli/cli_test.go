@@ -43,6 +43,7 @@ func (f *fakeController) Status(context.Context) (music.Status, error) {
 	f.calls = append(f.calls, "Status")
 	return f.status, nil
 }
+
 func (f *fakeController) Open(context.Context) error { f.calls = append(f.calls, "Open"); return nil }
 
 func (f *fakeController) SaveArtwork(_ context.Context, path string) error {
@@ -115,14 +116,20 @@ func (f *fakeController) ImportSoundCloud(_ context.Context, url, _, _, _ string
 	f.playQuery = url
 	return port.ImportResult{}, nil
 }
-func (f *fakeController) Play(context.Context) error  { f.calls = append(f.calls, "Play"); return nil }
+
+func (f *fakeController) Play(context.Context) error { f.calls = append(f.calls, "Play"); return nil }
+
 func (f *fakeController) Pause(context.Context) error { f.calls = append(f.calls, "Pause"); return nil }
+
 func (f *fakeController) Toggle(context.Context) error {
 	f.calls = append(f.calls, "Toggle")
 	return nil
 }
+
 func (f *fakeController) Stop(context.Context) error { f.calls = append(f.calls, "Stop"); return nil }
+
 func (f *fakeController) Next(context.Context) error { f.calls = append(f.calls, "Next"); return nil }
+
 func (f *fakeController) Previous(context.Context) error {
 	f.calls = append(f.calls, "Previous")
 	return nil
