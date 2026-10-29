@@ -93,6 +93,9 @@ amp status     # now served from the cache (~instant)
   `Shift-Tab` or number keys `1`–`5`.
 - `j`/`k` move, `Enter` plays the highlighted item, `space` toggles play/pause,
   `/` types a search query, `r` refreshes, `q` quits.
+- Library tabs reload when you switch to them and every 15 seconds while you
+  stay on Playlists, Artists, or Albums (paused while you filter), so a playlist
+  created in Music.app appears on its own. The selection stays put.
 
 ```sh
 amd &        # optional: event-driven updates
