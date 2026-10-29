@@ -224,11 +224,15 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tabItemsMsg:
 		if msg.err == nil {
+			prev, hadPrev := m.lists[msg.tab].Selected()
 			m.items[msg.tab] = msg.items
 			m.values[msg.tab] = msg.values
 			m.keys[msg.tab] = msg.keys
 			m.loaded[msg.tab] = true
 			m.refreshView(msg.tab)
+			if hadPrev && msg.tab != tabQueue {
+				m.reselect(msg.tab, prev)
+			}
 			if msg.tab == tabQueue {
 				m.syncQueue(true)
 			}
@@ -548,6 +552,18 @@ func (m *app) refreshView(tab tabID) {
 		return
 	}
 	m.lists[tab].SetItems(m.items[tab])
+}
+
+// reselect puts the cursor back on the row showing line after a reload, so items
+// added or removed elsewhere in the list do not move the selection. If the row is
+// gone the cursor keeps whatever position the reload left it on.
+func (m *app) reselect(tab tabID, line string) {
+	for i, it := range m.lists[tab].items {
+		if it == line {
+			m.lists[tab].MoveTo(i)
+			return
+		}
+	}
 }
 
 // applyView sets the active tab's visible rows from its full items, narrowing to

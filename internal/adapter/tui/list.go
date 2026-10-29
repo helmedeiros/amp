@@ -78,6 +78,14 @@ func (l *list) SetMarker(i int) {
 // Cursor returns the selected index (0 when empty).
 func (l *list) Cursor() int { return l.cursor }
 
+// Selected returns the highlighted item and whether there is one.
+func (l *list) Selected() (string, bool) {
+	if l.cursor < 0 || l.cursor >= len(l.items) {
+		return "", false
+	}
+	return l.items[l.cursor], true
+}
+
 // Len returns the number of items.
 func (l *list) Len() int { return len(l.items) }
 
