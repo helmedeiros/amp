@@ -158,6 +158,11 @@ func (f *fakePlayer) Playlists(context.Context) ([]music.Playlist, error) {
 	return f.playlists, nil
 }
 
+func (f *fakePlayer) LibrarySignature(context.Context) (string, error) {
+	f.calls = append(f.calls, "LibrarySignature")
+	return "sig", nil
+}
+
 func (f *fakePlayer) Artists(context.Context) ([]string, error) {
 	f.calls = append(f.calls, "Artists")
 	return f.names, nil
@@ -245,6 +250,19 @@ func TestServiceStatusPassesThrough(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
+}
+
+func TestServiceLibrarySignaturePassesThrough(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{}
+	svc := app.NewService(fake, &memStore{})
+
+	got, err := svc.LibrarySignature(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "sig", got)
+	assert.Equal(t, []string{"LibrarySignature"}, fake.calls)
 }
 
 func TestServiceSearchTrimsAndDelegates(t *testing.T) {

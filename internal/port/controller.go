@@ -49,6 +49,11 @@ type Controller interface {
 	QueueClear(ctx context.Context) error
 	// Playlists returns the user's playlists.
 	Playlists(ctx context.Context) ([]music.Playlist, error)
+	// LibrarySignature returns a cheap fingerprint of the library's shape
+	// (playlist names and track total). It changes when a playlist is created,
+	// renamed or deleted, or tracks are added to the library, so callers can poll
+	// it instead of reloading whole lists.
+	LibrarySignature(ctx context.Context) (string, error)
 	// Artists returns the distinct, sorted artist names in the library.
 	Artists(ctx context.Context) ([]string, error)
 	// Albums returns the distinct, sorted albums in the library, each with its

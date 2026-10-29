@@ -30,6 +30,22 @@ func TestPlaylistsScriptFetchesArtists(t *testing.T) {
 	assert.Contains(t, playlistsScript, "artists:")
 }
 
+func TestPlayerLibrarySignatureRunsCheapScript(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeRunner{out: []byte("Chill\nFocus|13655\n")}
+	p := newPlayer(fake)
+
+	got, err := p.LibrarySignature(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "Chill\nFocus|13655", got)
+	require.Len(t, fake.calls, 1)
+	assert.Equal(t, javaScript, fake.calls[0].lang)
+	assert.Equal(t, librarySignatureScript, fake.calls[0].script)
+	assert.NotContains(t, librarySignatureScript, "tracks.artist", "must not read per-playlist tracks")
+}
+
 func TestPlayerPlaylistsRunsJavaScript(t *testing.T) {
 	t.Parallel()
 
