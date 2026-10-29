@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -22,6 +23,8 @@ type stubController struct {
 	albums    []music.Album
 
 	searchResult []music.Track
+
+	sig string
 
 	calls      []string
 	playedName string
@@ -49,8 +52,9 @@ func (s *stubController) Queue(context.Context) ([]music.Track, error) { return 
 func (s *stubController) Playlists(context.Context) ([]music.Playlist, error) {
 	return s.playlists, nil
 }
-func (s *stubController) Artists(context.Context) ([]string, error)     { return s.artists, nil }
-func (s *stubController) Albums(context.Context) ([]music.Album, error) { return s.albums, nil }
+func (s *stubController) LibrarySignature(context.Context) (string, error) { return s.sig, nil }
+func (s *stubController) Artists(context.Context) ([]string, error)        { return s.artists, nil }
+func (s *stubController) Albums(context.Context) ([]music.Album, error)    { return s.albums, nil }
 
 func (s *stubController) PlayQueueAt(_ context.Context, index int) error {
 	s.calls = append(s.calls, "PlayQueueAt")
@@ -770,21 +774,67 @@ func TestAppReloadKeepsSelectedRowUnderFilter(t *testing.T) {
 	assert.Equal(t, []int{0, 1, 2, 3}, m.viewMap)
 }
 
-func TestAppRefreshTickReloadsLibraryTab(t *testing.T) {
+func TestAppRefreshTickChecksLibrarySignature(t *testing.T) {
 	t.Parallel()
 
-	m := newTestApp(&stubController{playlists: []music.Playlist{{Name: "New", Count: 3}}})
+	ctrl := &stubController{sig: "a"}
+	m := newTestApp(ctrl)
 	m.active = tabPlaylists
 
 	_, cmd := m.Update(refreshTickMsg{})
 	require.NotNil(t, cmd)
 	batch, ok := cmd().(tea.BatchMsg)
-	require.True(t, ok, "a reload and the next tick are scheduled together")
+	require.True(t, ok, "a signature check and the next tick are scheduled together")
 	require.Len(t, batch, 2)
-	got, ok := batch[0]().(tabItemsMsg)
-	require.True(t, ok, "the first command reloads the visible tab")
+	got, ok := batch[0]().(librarySigMsg)
+	require.True(t, ok, "the first command reads the signature, not the whole list")
+	assert.Equal(t, "a", got.sig)
+}
+
+func TestAppReloadsOnlyWhenSignatureChanges(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{playlists: []music.Playlist{{Name: "New", Count: 3}}})
+	m.active = tabPlaylists
+
+	// First signature is the baseline: no reload.
+	next, cmd := m.Update(librarySigMsg{sig: "a"})
+	m = next.(app)
+	assert.Nil(t, cmd)
+
+	// Same signature: still nothing.
+	next, cmd = m.Update(librarySigMsg{sig: "a"})
+	m = next.(app)
+	assert.Nil(t, cmd)
+
+	// A read error keeps the baseline and does not reload.
+	next, cmd = m.Update(librarySigMsg{err: errors.New("osascript failed")})
+	m = next.(app)
+	assert.Nil(t, cmd)
+	assert.Equal(t, "a", m.sig)
+
+	// A different signature reloads the visible tab.
+	next, cmd = m.Update(librarySigMsg{sig: "b"})
+	m = next.(app)
+	require.NotNil(t, cmd)
+	got, ok := cmd().(tabItemsMsg)
+	require.True(t, ok)
 	assert.Equal(t, tabPlaylists, got.tab)
 	assert.Equal(t, []string{"New  (3)"}, got.items)
+	assert.Equal(t, "b", m.sig)
+}
+
+func TestAppSignatureChangeSkippedWhileBusy(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	m.active, m.filtering = tabPlaylists, true
+	m.sig, m.hasSig = "a", true
+
+	next, cmd := m.Update(librarySigMsg{sig: "b"})
+
+	assert.Nil(t, cmd, "no background reload while the user is filtering")
+	assert.Equal(t, "a", next.(app).sig, "the change stays pending until a reload is allowed")
 }
 
 func TestAppCanAutoRefresh(t *testing.T) {
