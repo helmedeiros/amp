@@ -85,3 +85,32 @@ func TestClientStatusServerError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
 }
+
+func TestClientLibrarySignature(t *testing.T) {
+	t.Parallel()
+
+	sock := fakeServer(t, daemon.Response{Signature: "Chill|10"})
+
+	got, err := daemonclient.New(sock).LibrarySignature(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "Chill|10", got)
+}
+
+func TestClientLibrarySignatureNotReady(t *testing.T) {
+	t.Parallel()
+
+	sock := fakeServer(t, daemon.Response{Error: "library signature not ready"})
+
+	_, err := daemonclient.New(sock).LibrarySignature(context.Background())
+
+	assert.Error(t, err)
+}
+
+func TestClientLibrarySignatureNoDaemon(t *testing.T) {
+	t.Parallel()
+
+	_, err := daemonclient.New("/tmp/amp-nonexistent.sock").LibrarySignature(context.Background())
+
+	assert.Error(t, err)
+}

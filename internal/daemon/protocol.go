@@ -11,7 +11,7 @@ import (
 
 // Request is a single client command.
 type Request struct {
-	Cmd string `json:"cmd"` // "status", "subscribe", or "ping"
+	Cmd string `json:"cmd"` // "status", "library", "subscribe", or "ping"
 }
 
 // Response is a single server message. For subscribe, the server sends one
@@ -20,7 +20,10 @@ type Response struct {
 	Event  string     `json:"event,omitempty"`
 	Status *StatusDTO `json:"status,omitempty"`
 	Pong   bool       `json:"pong,omitempty"`
-	Error  string     `json:"error,omitempty"`
+
+	// Signature answers "library": the cached library fingerprint.
+	Signature string `json:"signature,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // StatusDTO is the wire form of a player snapshot.

@@ -21,6 +21,11 @@ type innerStub struct {
 	called bool
 }
 
+func (s *innerStub) LibrarySignature(context.Context) (string, error) {
+	s.called = true
+	return "direct", nil
+}
+
 func (s *innerStub) Status(context.Context) (music.Status, error) {
 	s.called = true
 	return s.status, nil
@@ -28,8 +33,11 @@ func (s *innerStub) Status(context.Context) (music.Status, error) {
 
 type fakeDaemon struct {
 	status music.Status
+	sig    string
 	err    error
 }
+
+func (f fakeDaemon) LibrarySignature(context.Context) (string, error) { return f.sig, f.err }
 
 func (f fakeDaemon) Status(context.Context) (music.Status, error) { return f.status, f.err }
 
@@ -60,4 +68,30 @@ func TestControllerFallsBackWhenDaemonFails(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, music.Paused, got.State)
 	assert.True(t, inner.called, "fell back to the direct controller")
+}
+
+func TestControllerLibrarySignaturePrefersDaemon(t *testing.T) {
+	t.Parallel()
+
+	inner := &innerStub{}
+	ctrl := daemonclient.NewController(inner, fakeDaemon{sig: "cached"})
+
+	got, err := ctrl.LibrarySignature(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "cached", got)
+	assert.False(t, inner.called)
+}
+
+func TestControllerLibrarySignatureFallsBackWhenDaemonFails(t *testing.T) {
+	t.Parallel()
+
+	inner := &innerStub{}
+	ctrl := daemonclient.NewController(inner, fakeDaemon{err: errors.New("no daemon")})
+
+	got, err := ctrl.LibrarySignature(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, "direct", got)
+	assert.True(t, inner.called)
 }

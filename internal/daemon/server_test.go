@@ -14,7 +14,12 @@ import (
 	"github.com/helmedeiros/amp/internal/music"
 )
 
-type staticReader struct{ s music.Status }
+type staticReader struct {
+	s   music.Status
+	sig string
+}
+
+func (r staticReader) LibrarySignature(context.Context) (string, error) { return r.sig, nil }
 
 func (r staticReader) Status(context.Context) (music.Status, error) { return r.s, nil }
 
@@ -52,7 +57,7 @@ func dial(t *testing.T, sock string) net.Conn {
 func TestServerStatus(t *testing.T) {
 	t.Parallel()
 
-	d := New(staticReader{music.Status{State: music.Playing, Volume: music.NewVolume(60)}}, time.Hour)
+	d := New(staticReader{s: music.Status{State: music.Playing, Volume: music.NewVolume(60)}}, time.Hour)
 	d.pollOnce(context.Background()) // warm the cache
 
 	conn := dial(t, serveOn(t, d))
@@ -107,4 +112,25 @@ func TestServerSubscribeStreamsChanges(t *testing.T) {
 	var next Response
 	require.NoError(t, dec.Decode(&next))
 	assert.Equal(t, "playing", next.Status.State)
+}
+
+func TestServerLibrary(t *testing.T) {
+	t.Parallel()
+
+	d := New(staticReader{sig: "Chill|10"}, time.Hour)
+
+	// Before the first library poll the server reports not-ready.
+	conn := dial(t, serveOn(t, d))
+	require.NoError(t, json.NewEncoder(conn).Encode(Request{Cmd: "library"}))
+	var resp Response
+	require.NoError(t, json.NewDecoder(conn).Decode(&resp))
+	assert.NotEmpty(t, resp.Error)
+
+	d.pollLibraryOnce(context.Background())
+	conn = dial(t, serveOn(t, d))
+	require.NoError(t, json.NewEncoder(conn).Encode(Request{Cmd: "library"}))
+	resp = Response{}
+	require.NoError(t, json.NewDecoder(conn).Decode(&resp))
+	assert.Equal(t, "Chill|10", resp.Signature)
+	assert.Empty(t, resp.Error)
 }

@@ -8,10 +8,16 @@ import (
 	"github.com/helmedeiros/amp/internal/music"
 )
 
-// Reader is the narrow driven port the daemon needs: a single status read.
-// The AppleScript adapter's Player satisfies it.
+// libraryInterval is how often the daemon re-reads the library signature. It is
+// far slower than the status poll: the signature only changes when the user edits
+// their library.
+const libraryInterval = 5 * time.Second
+
+// Reader is the narrow driven port the daemon needs: a status read and the cheap
+// library signature. The AppleScript adapter's Player satisfies it.
 type Reader interface {
 	Status(ctx context.Context) (music.Status, error)
+	LibrarySignature(ctx context.Context) (string, error)
 }
 
 // Daemon polls a Reader on an interval, caches the latest status, and fans out
@@ -24,6 +30,10 @@ type Daemon struct {
 	last   music.Status
 	hasVal bool
 	subs   map[chan music.Status]struct{}
+
+	libInterval time.Duration
+	libSig      string
+	hasLibSig   bool
 }
 
 // New creates a Daemon that polls reader every interval.
@@ -32,6 +42,8 @@ func New(reader Reader, interval time.Duration) *Daemon {
 		reader:   reader,
 		interval: interval,
 		subs:     make(map[chan music.Status]struct{}),
+
+		libInterval: libraryInterval,
 	}
 }
 
@@ -39,16 +51,41 @@ func New(reader Reader, interval time.Duration) *Daemon {
 func (d *Daemon) Run(ctx context.Context) error {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
+	libTicker := time.NewTicker(d.libInterval)
+	defer libTicker.Stop()
 
 	d.pollOnce(ctx)
+	d.pollLibraryOnce(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
 			d.pollOnce(ctx)
+		case <-libTicker.C:
+			d.pollLibraryOnce(ctx)
 		}
 	}
+}
+
+// pollLibraryOnce refreshes the cached library signature. A read error leaves
+// the cache untouched.
+func (d *Daemon) pollLibraryOnce(ctx context.Context) {
+	sig, err := d.reader.LibrarySignature(ctx)
+	if err != nil {
+		return
+	}
+	d.mu.Lock()
+	d.libSig, d.hasLibSig = sig, true
+	d.mu.Unlock()
+}
+
+// LibrarySignature returns the cached library signature and whether one has
+// been read yet.
+func (d *Daemon) LibrarySignature() (string, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.libSig, d.hasLibSig
 }
 
 // pollOnce reads the status and, when it changed, updates the cache and
