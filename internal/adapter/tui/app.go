@@ -66,8 +66,13 @@ type (
 	}
 	// workTickMsg animates the loading bar while a play/fill is in flight.
 	workTickMsg struct{}
-	// refreshTickMsg fires periodically to reload the library tab on screen.
+	// refreshTickMsg fires periodically to check whether the library changed.
 	refreshTickMsg struct{}
+	// librarySigMsg carries the library signature read by a check.
+	librarySigMsg struct {
+		sig string
+		err error
+	}
 	// flashClearMsg clears the transient success line after a short delay.
 	flashClearMsg struct{}
 	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
@@ -88,9 +93,19 @@ func workTick() tea.Cmd {
 	return tea.Tick(110*time.Millisecond, func(time.Time) tea.Msg { return workTickMsg{} })
 }
 
-// refreshInterval is how often the visible library tab is reloaded, so changes
-// made outside the TUI (a new playlist, an added album) appear on their own.
-const refreshInterval = 15 * time.Second
+// refreshInterval is how often the library signature is checked. The check is
+// cheap (and served by the daemon when it runs); the visible tab is reloaded only
+// when the signature changed, so changes made outside the TUI (a new playlist, an
+// added album) appear on their own without a full reload every tick.
+const refreshInterval = 5 * time.Second
+
+// checkLibrary reads the library signature off the UI goroutine.
+func checkLibrary(ctx context.Context, ctrl port.Controller) tea.Cmd {
+	return func() tea.Msg {
+		sig, err := ctrl.LibrarySignature(ctx)
+		return librarySigMsg{sig: sig, err: err}
+	}
+}
 
 func refreshTick() tea.Cmd {
 	return tea.Tick(refreshInterval, func(time.Time) tea.Msg { return refreshTickMsg{} })
@@ -118,6 +133,11 @@ type app struct {
 	values [][]string // per-tab action targets (playlist/album/artist names)
 	keys   [][]string // per-tab, per-row filter keys (lowercased, artist-aware)
 	loaded []bool
+
+	// sig is the last library signature seen; a different one means the library
+	// changed outside the TUI.
+	sig    string
+	hasSig bool
 
 	// filtering narrows the active tab's list locally as the user types.
 	// viewMap maps each visible row back to its index in the full items slice
@@ -177,7 +197,7 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 }
 
 func (m app) Init() tea.Cmd {
-	return tea.Batch(waitForStatus(m.stream), m.loadTab(m.active), refreshTick())
+	return tea.Batch(waitForStatus(m.stream), m.loadTab(m.active), checkLibrary(m.ctx, m.ctrl), refreshTick())
 }
 
 func waitForStatus(stream <-chan music.Status) tea.Cmd {
@@ -281,7 +301,21 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.canAutoRefresh() {
 			return m, refreshTick()
 		}
-		return m, tea.Batch(m.loadTab(m.active), refreshTick())
+		return m, tea.Batch(checkLibrary(m.ctx, m.ctrl), refreshTick())
+
+	case librarySigMsg:
+		if msg.err != nil {
+			return m, nil // keep the last known signature; try again next tick
+		}
+		changed := m.hasSig && msg.sig != m.sig
+		if changed && !m.canAutoRefresh() {
+			return m, nil // keep the old signature so the change is picked up later
+		}
+		m.sig, m.hasSig = msg.sig, true
+		if changed {
+			return m, m.loadTab(m.active)
+		}
+		return m, nil
 
 	case flashClearMsg:
 		m.flash = ""
@@ -397,8 +431,8 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// canAutoRefresh reports whether the visible tab may be reloaded in the
-// background: only the library tabs, and never while the user is typing a
+// canAutoRefresh reports whether the visible tab may be checked and reloaded in
+// the background: only the library tabs, and never while the user is typing a
 // filter or search, an add-albums picker is open, or a play is in flight.
 func (m app) canAutoRefresh() bool {
 	switch m.active {
