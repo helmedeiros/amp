@@ -1,8 +1,10 @@
 package applescript
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/helmedeiros/amp/internal/music"
 )
@@ -29,6 +31,27 @@ if (Music.running()) {
 }
 JSON.stringify(out);
 `
+
+// librarySignatureScript is a fast change detector: the playlist names plus the
+// library's track total, joined into one string. It is a fraction of the cost of
+// playlistsScript because it reads no per-playlist tracks.
+const librarySignatureScript = `
+const Music = Application('Music');
+let sig = '';
+if (Music.running()) {
+  sig = Music.userPlaylists.name().join('\n') + '|' + Music.libraryPlaylists[0].tracks.length;
+}
+sig;
+`
+
+// LibrarySignature returns a cheap fingerprint of the library's shape.
+func (p *Player) LibrarySignature(ctx context.Context) (string, error) {
+	out, err := p.run.Run(ctx, javaScript, librarySignatureScript)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
 
 type playlistDTO struct {
 	Name    string   `json:"name"`

@@ -268,6 +268,11 @@ func (s *Service) Playlists(ctx context.Context) ([]music.Playlist, error) {
 	return s.player.Playlists(ctx)
 }
 
+// LibrarySignature returns a cheap fingerprint of the library's shape.
+func (s *Service) LibrarySignature(ctx context.Context) (string, error) {
+	return s.player.LibrarySignature(ctx)
+}
+
 // Artists returns the distinct, sorted artist names in the library.
 func (s *Service) Artists(ctx context.Context) ([]string, error) {
 	return s.player.Artists(ctx)

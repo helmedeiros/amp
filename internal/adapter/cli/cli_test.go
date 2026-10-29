@@ -97,6 +97,11 @@ func (f *fakeController) Playlists(context.Context) ([]music.Playlist, error) {
 	return f.playlists, nil
 }
 
+func (f *fakeController) LibrarySignature(context.Context) (string, error) {
+	f.calls = append(f.calls, "LibrarySignature")
+	return "sig", nil
+}
+
 func (f *fakeController) Artists(context.Context) ([]string, error) {
 	f.calls = append(f.calls, "Artists")
 	return f.names, nil
