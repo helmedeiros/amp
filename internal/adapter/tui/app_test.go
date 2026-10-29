@@ -730,6 +730,46 @@ func TestAppSwitchToLoadedTabRefetchesAndKeepsCachedItems(t *testing.T) {
 	assert.Equal(t, 2, m.lists[tabPlaylists].Len(), "the refetched list replaces the cached one")
 }
 
+func TestAppReloadKeepsSelectedRowWhenItemsShift(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	m.active = tabPlaylists
+	next, _ := m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"A", "B", "C"}, values: []string{"A", "B", "C"}})
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // on B
+	m = next.(app)
+
+	next, _ = m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"Z", "A", "B", "C"}, values: []string{"Z", "A", "B", "C"}})
+	m = next.(app)
+
+	assert.Equal(t, 2, m.lists[tabPlaylists].Cursor(), "cursor follows B to its new row")
+}
+
+func TestAppReloadKeepsSelectedRowUnderFilter(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{})
+	m.active = tabPlaylists
+	next, _ := m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"x1", "x2", "x3"}, values: []string{"x1", "x2", "x3"}})
+	m = next.(app)
+	for _, r := range []string{"/", "x"} {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(r)})
+		m = next.(app)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter}) // keep filter
+	m = next.(app)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}) // on x2
+	m = next.(app)
+
+	next, _ = m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"x0", "x1", "x2", "x3"}, values: []string{"x0", "x1", "x2", "x3"}})
+	m = next.(app)
+
+	assert.Equal(t, "x", m.filterQuery, "filter survives the reload")
+	assert.Equal(t, 2, m.lists[tabPlaylists].Cursor(), "cursor stays on x2")
+	assert.Equal(t, []int{0, 1, 2, 3}, m.viewMap)
+}
+
 func TestAppListNavigation(t *testing.T) {
 	t.Parallel()
 
