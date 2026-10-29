@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-10-29
+
+### Changed
+
+- **TUI: far lighter library refresh.** 0.7.0 reloaded the visible tab every
+  15 seconds, which ran the full playlists script (~3.6s with ~100 playlists)
+  each time. The TUI now checks a cheap library fingerprint (playlist names plus
+  the library track total, ~0.1s) every 5 seconds and reloads the tab only when
+  it changed. A change seen while you filter or a play is in flight stays
+  pending instead of being lost.
+
+### Added
+
+- **`amd` serves the library fingerprint.** The daemon polls it every 5 seconds
+  and answers a new `library` command from its cache, so any number of TUIs
+  share one poll. Without `amd` running, amp reads it directly as before.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added
