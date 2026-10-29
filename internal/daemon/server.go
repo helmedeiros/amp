@@ -47,6 +47,14 @@ func handleConn(ctx context.Context, conn net.Conn, d *Daemon) {
 		dto := ToStatusDTO(currentStatus(d))
 		_ = enc.Encode(Response{Status: &dto})
 
+	case "library":
+		sig, ok := d.LibrarySignature()
+		if !ok {
+			_ = enc.Encode(Response{Error: "library signature not ready"})
+			return
+		}
+		_ = enc.Encode(Response{Signature: sig})
+
 	case "subscribe":
 		streamStatus(ctx, enc, d)
 

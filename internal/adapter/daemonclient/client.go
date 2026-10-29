@@ -53,6 +53,34 @@ func (c *Client) Status(ctx context.Context) (music.Status, error) {
 	return resp.Status.ToStatus(), nil
 }
 
+// LibrarySignature reads the daemon's cached library signature. It errors (fast)
+// when the daemon is not running or has not read one yet, so callers can fall
+// back to direct access.
+func (c *Client) LibrarySignature(ctx context.Context) (string, error) {
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", c.socket)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = conn.Close() }()
+
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+
+	if err := json.NewEncoder(conn).Encode(daemon.Request{Cmd: "library"}); err != nil {
+		return "", err
+	}
+
+	var resp daemon.Response
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return "", err
+	}
+	if resp.Error != "" {
+		return "", errors.New(resp.Error)
+	}
+	return resp.Signature, nil
+}
+
 // Subscribe opens a streaming connection and delivers the current status plus
 // every change on the returned channel until ctx is cancelled or the daemon
 // closes the connection. It errors (fast) when the daemon is not running.

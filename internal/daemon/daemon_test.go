@@ -17,6 +17,9 @@ type scriptedReader struct {
 	i    int
 	seq  []music.Status
 	errs []error
+
+	sig    string
+	sigErr error
 }
 
 func (r *scriptedReader) Status(context.Context) (music.Status, error) {
@@ -30,6 +33,10 @@ func (r *scriptedReader) Status(context.Context) (music.Status, error) {
 		err = r.errs[i]
 	}
 	return r.seq[i], err
+}
+
+func (r *scriptedReader) LibrarySignature(context.Context) (string, error) {
+	return r.sig, r.sigErr
 }
 
 func playing(vol int) music.Status {
@@ -101,4 +108,29 @@ func TestDaemonUnchangedStatusIsNotPushed(t *testing.T) {
 		t.Fatalf("unexpected push for unchanged status: %+v", s)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+func TestDaemonCachesLibrarySignature(t *testing.T) {
+	t.Parallel()
+
+	r := &scriptedReader{seq: []music.Status{playing(40)}, sig: "Chill|10"}
+	d := New(r, time.Hour)
+
+	_, ok := d.LibrarySignature()
+	assert.False(t, ok, "no signature before the first poll")
+
+	d.pollLibraryOnce(context.Background())
+	got, ok := d.LibrarySignature()
+	require.True(t, ok)
+	assert.Equal(t, "Chill|10", got)
+
+	r.sig, r.sigErr = "Chill|11", errors.New("osascript failed")
+	d.pollLibraryOnce(context.Background())
+	got, _ = d.LibrarySignature()
+	assert.Equal(t, "Chill|10", got, "a read error keeps the cached signature")
+
+	r.sigErr = nil
+	d.pollLibraryOnce(context.Background())
+	got, _ = d.LibrarySignature()
+	assert.Equal(t, "Chill|11", got)
 }
