@@ -746,7 +746,9 @@ func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 	if to == tabQueue {
 		m.syncQueue(true)
 	}
-	return m, nil
+	// Show the cached list straight away, but refetch so changes made outside
+	// the TUI (a new playlist, an added album) appear without pressing r.
+	return m, m.loadTab(to)
 }
 
 func (m *app) resizeLists() {

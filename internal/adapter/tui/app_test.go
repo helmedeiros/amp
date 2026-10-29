@@ -709,6 +709,27 @@ func TestAppSwitchesTabsAndLoads(t *testing.T) {
 	assert.IsType(t, tabItemsMsg{}, cmd(), "load command yields tab items")
 }
 
+func TestAppSwitchToLoadedTabRefetchesAndKeepsCachedItems(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{playlists: []music.Playlist{{Name: "Old"}, {Name: "New"}}}
+	m := newTestApp(ctrl)
+	next, _ := m.Update(tabItemsMsg{tab: tabPlaylists, items: []string{"Old"}, values: []string{"Old"}})
+	m = next.(app)
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	m = next.(app)
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	m = next.(app)
+
+	require.NotNil(t, cmd, "switching to an already-loaded tab should still refetch it")
+	assert.Equal(t, 1, m.lists[tabPlaylists].Len(), "cached items stay visible while the refetch runs")
+
+	next, _ = m.Update(cmd())
+	m = next.(app)
+	assert.Equal(t, 2, m.lists[tabPlaylists].Len(), "the refetched list replaces the cached one")
+}
+
 func TestAppListNavigation(t *testing.T) {
 	t.Parallel()
 
