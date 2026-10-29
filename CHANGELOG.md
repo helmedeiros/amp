@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-29
+
+### Added
+
+- **TUI: library tabs stay fresh.** Playlists, Artists, and Albums reload every
+  15 seconds while you stay on them (paused while you filter, pick albums, or a
+  play is in flight), so a playlist created in Music.app appears without
+  pressing `r`.
+
+### Fixed
+
+- **TUI: new playlists didn't appear until `r`.** Tabs were fetched once and
+  cached; switching to a tab now shows the cached list and refetches it.
+- **TUI: reloads no longer move your selection.** The cursor follows the
+  selected row, and an active filter is kept, when a tab reloads.
+
 ## [0.6.1] - 2026-10-14
 
 ### Fixed
