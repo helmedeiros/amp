@@ -66,6 +66,8 @@ type (
 	}
 	// workTickMsg animates the loading bar while a play/fill is in flight.
 	workTickMsg struct{}
+	// refreshTickMsg fires periodically to reload the library tab on screen.
+	refreshTickMsg struct{}
 	// flashClearMsg clears the transient success line after a short delay.
 	flashClearMsg struct{}
 	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
@@ -84,6 +86,14 @@ type (
 // workTick schedules the next animation frame of the loading bar.
 func workTick() tea.Cmd {
 	return tea.Tick(110*time.Millisecond, func(time.Time) tea.Msg { return workTickMsg{} })
+}
+
+// refreshInterval is how often the visible library tab is reloaded, so changes
+// made outside the TUI (a new playlist, an added album) appear on their own.
+const refreshInterval = 15 * time.Second
+
+func refreshTick() tea.Cmd {
+	return tea.Tick(refreshInterval, func(time.Time) tea.Msg { return refreshTickMsg{} })
 }
 
 // flashDuration is how long the "album complete" confirmation stays up.
@@ -167,7 +177,7 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 }
 
 func (m app) Init() tea.Cmd {
-	return tea.Batch(waitForStatus(m.stream), m.loadTab(m.active))
+	return tea.Batch(waitForStatus(m.stream), m.loadTab(m.active), refreshTick())
 }
 
 func waitForStatus(stream <-chan music.Status) tea.Cmd {
@@ -266,6 +276,12 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.workFrame++
 		return m, workTick()
+
+	case refreshTickMsg:
+		if !m.canAutoRefresh() {
+			return m, refreshTick()
+		}
+		return m, tea.Batch(m.loadTab(m.active), refreshTick())
 
 	case flashClearMsg:
 		m.flash = ""
@@ -379,6 +395,18 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// canAutoRefresh reports whether the visible tab may be reloaded in the
+// background: only the library tabs, and never while the user is typing a
+// filter or search, an add-albums picker is open, or a play is in flight.
+func (m app) canAutoRefresh() bool {
+	switch m.active {
+	case tabPlaylists, tabArtists, tabAlbums:
+	default:
+		return false // Queue follows playback; Search is query-driven
+	}
+	return !m.filtering && !m.picking && !m.working
 }
 
 // selectedArtist returns the artist for the highlighted row: the row itself on

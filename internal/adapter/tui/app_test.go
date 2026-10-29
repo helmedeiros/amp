@@ -770,6 +770,49 @@ func TestAppReloadKeepsSelectedRowUnderFilter(t *testing.T) {
 	assert.Equal(t, []int{0, 1, 2, 3}, m.viewMap)
 }
 
+func TestAppRefreshTickReloadsLibraryTab(t *testing.T) {
+	t.Parallel()
+
+	m := newTestApp(&stubController{playlists: []music.Playlist{{Name: "New", Count: 3}}})
+	m.active = tabPlaylists
+
+	_, cmd := m.Update(refreshTickMsg{})
+	require.NotNil(t, cmd)
+	batch, ok := cmd().(tea.BatchMsg)
+	require.True(t, ok, "a reload and the next tick are scheduled together")
+	require.Len(t, batch, 2)
+	got, ok := batch[0]().(tabItemsMsg)
+	require.True(t, ok, "the first command reloads the visible tab")
+	assert.Equal(t, tabPlaylists, got.tab)
+	assert.Equal(t, []string{"New  (3)"}, got.items)
+}
+
+func TestAppCanAutoRefresh(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		setup func(*app)
+		want  bool
+	}{
+		"playlists": {func(m *app) { m.active = tabPlaylists }, true},
+		"artists":   {func(m *app) { m.active = tabArtists }, true},
+		"albums":    {func(m *app) { m.active = tabAlbums }, true},
+		"queue":     {func(m *app) { m.active = tabQueue }, false},
+		"search":    {func(m *app) { m.active = tabSearch }, false},
+		"filtering": {func(m *app) { m.active, m.filtering = tabPlaylists, true }, false},
+		"picking":   {func(m *app) { m.active, m.picking = tabAlbums, true }, false},
+		"working":   {func(m *app) { m.active, m.working = tabAlbums, true }, false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			m := newTestApp(&stubController{})
+			tc.setup(&m)
+			assert.Equal(t, tc.want, m.canAutoRefresh())
+		})
+	}
+}
+
 func TestAppListNavigation(t *testing.T) {
 	t.Parallel()
 
