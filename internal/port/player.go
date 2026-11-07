@@ -38,6 +38,8 @@ type Player interface {
 	PlayQueueAt(ctx context.Context, index int) error
 	// Queue returns the tracks currently in the queue.
 	Queue(ctx context.Context) ([]music.Track, error)
+	CurrentPlaylistTracks(ctx context.Context) ([]music.Track, error)
+	AlbumTracks(ctx context.Context, album string) ([]music.Track, error)
 	// QueueAdd appends the search results to the queue and returns how many were
 	// added.
 	QueueAdd(ctx context.Context, query string, limit int) (int, error)

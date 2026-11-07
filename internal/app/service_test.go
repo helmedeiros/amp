@@ -142,6 +142,17 @@ func (f *fakePlayer) Queue(context.Context) ([]music.Track, error) {
 	return f.searchResult, nil
 }
 
+func (f *fakePlayer) CurrentPlaylistTracks(context.Context) ([]music.Track, error) {
+	f.calls = append(f.calls, "CurrentPlaylistTracks")
+	return f.searchResult, nil
+}
+
+func (f *fakePlayer) AlbumTracks(_ context.Context, album string) ([]music.Track, error) {
+	f.calls = append(f.calls, "AlbumTracks")
+	f.playedName = album
+	return f.searchResult, nil
+}
+
 func (f *fakePlayer) QueueAdd(_ context.Context, query string, limit int) (int, error) {
 	f.calls = append(f.calls, "QueueAdd")
 	f.searchQuery, f.searchLimit = query, limit
@@ -842,4 +853,38 @@ func TestServiceUnmuteFallsBackToDefault(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, app.DefaultUnmuteVolume, got.Int())
+}
+
+func TestServiceSourceTracksRoutesBySource(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		src       music.Source
+		album     string
+		wantCalls []string
+		wantAlbum string
+	}{
+		{name: "amp queue", src: music.Source{Kind: music.SourceQueue, Name: "amp queue"}, wantCalls: []string{"Queue"}},
+		{name: "unknown", src: music.Source{}, wantCalls: []string{"Queue"}},
+		{name: "playlist", src: music.Source{Kind: music.SourcePlaylist, Name: "Chill"}, wantCalls: []string{"CurrentPlaylistTracks"}},
+		{name: "library", src: music.Source{Kind: music.SourceLibrary}, album: "Discovery", wantCalls: []string{"AlbumTracks"}, wantAlbum: "Discovery"},
+		{name: "streaming", src: music.Source{Kind: music.SourceExternal}, album: "TRON", wantCalls: []string{"AlbumTracks"}, wantAlbum: "TRON"},
+		{name: "streaming without album", src: music.Source{Kind: music.SourceExternal}, album: " "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			fake := &fakePlayer{searchResult: []music.Track{{Name: "x"}}}
+			svc := app.NewService(fake, &memStore{})
+
+			_, err := svc.SourceTracks(context.Background(), tt.src, tt.album)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantCalls, fake.calls)
+			assert.Equal(t, tt.wantAlbum, fake.playedName)
+		})
+	}
 }

@@ -52,6 +52,7 @@ type (
 		items  []string
 		values []string
 		keys   []string // per-row filter keys (lowercased; may include artists)
+		view   queueView
 		err    error
 	}
 	actionDoneMsg  struct{}
@@ -172,6 +173,8 @@ type app struct {
 	// cursor jumps to the matching row.
 	playingKey string
 
+	queue queueView
+
 	width, height int
 	quitting      bool
 
@@ -211,10 +214,10 @@ func waitForStatus(stream <-chan music.Status) tea.Cmd {
 }
 
 func (m app) loadTab(tab tabID) tea.Cmd {
-	ctx, ctrl := m.ctx, m.ctrl
+	ctx, ctrl, view := m.ctx, m.ctrl, m.queue
 	return func() tea.Msg {
-		items, values, keys, err := fetchTab(ctx, ctrl, tab)
-		return tabItemsMsg{tab: tab, items: items, values: values, keys: keys, err: err}
+		items, values, keys, err := fetchTab(ctx, ctrl, tab, view)
+		return tabItemsMsg{tab: tab, items: items, values: values, keys: keys, view: view, err: err}
 	}
 }
 
@@ -223,10 +226,15 @@ func (m app) loadTab(tab tabID) tea.Cmd {
 // filter keys. A key is what `/` matches against and may carry more than the
 // visible line — e.g. a playlist's artists — so filtering by an artist finds
 // playlists that merely contain them.
-func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID) (items, values, keys []string, err error) {
+func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID, view queueView) (items, values, keys []string, err error) {
 	switch tab {
 	case tabQueue:
-		ts, err := ctrl.Queue(ctx)
+		var ts []music.Track
+		if view.following() {
+			ts, err = ctrl.SourceTracks(ctx, view.src, view.album)
+		} else {
+			ts, err = ctrl.Queue(ctx)
+		}
 		return trackLines(ts), nil, trackKeys(ts), err
 	case tabPlaylists:
 		ps, err := ctrl.Playlists(ctx)
@@ -246,13 +254,17 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
 		m.status, m.hasStatus = music.Status(msg), true
+		cmd := m.followSource()
 		m.syncQueue(false)
-		return m, waitForStatus(m.stream)
+		return m, tea.Batch(waitForStatus(m.stream), cmd)
 
 	case streamClosedMsg:
 		return m, nil // header stops updating; the TUI stays usable
 
 	case tabItemsMsg:
+		if msg.tab == tabQueue && msg.view != m.queue {
+			return m, nil
+		}
 		if msg.err == nil {
 			prev, hadPrev := m.lists[msg.tab].Selected()
 			m.items[msg.tab] = msg.items
@@ -280,6 +292,7 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A play set the queue to the chosen context; show it.
 		m.working = false
 		m.active = tabQueue
+		m.queue = queueView{}
 		m.clearFilter()
 		m.notice = msg.notice
 		m.flash = msg.flash
@@ -407,6 +420,10 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "k", "up":
 		m.lists[m.active].MoveUp()
 	case "enter":
+		if m.active == tabQueue && m.queue.following() {
+			m.notice = "this list follows Music.app — space pause · n next · p previous"
+			return m, nil
+		}
 		cmd := m.playSelection()
 		if cmd != nil && m.active == tabAlbums {
 			// Album plays may pause to fill missing tracks from Apple Music; show
@@ -418,6 +435,10 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case " ":
 		return m, actionCmd(func() error { return m.ctrl.Toggle(m.ctx) })
+	case "n":
+		return m, actionCmd(func() error { return m.ctrl.Next(m.ctx) })
+	case "p":
+		return m, actionCmd(func() error { return m.ctrl.Previous(m.ctx) })
 	case "r":
 		if m.active != tabSearch {
 			m.loaded[m.active] = false
@@ -714,6 +735,21 @@ func (m *app) syncQueue(focus bool) {
 	}
 }
 
+func (m *app) followSource() tea.Cmd {
+	v, ok := viewFor(m.status)
+	if !ok || v == m.queue {
+		return nil
+	}
+	m.queue = v
+	m.items[tabQueue], m.keys[tabQueue] = nil, nil
+	m.loaded[tabQueue] = false
+	m.refreshView(tabQueue)
+	if m.active != tabQueue {
+		return nil
+	}
+	return m.loadTab(tabQueue)
+}
+
 // orig maps a visible row index to its index in the full item slice.
 func (m app) orig(i int) int {
 	if m.viewMap == nil || i < 0 || i >= len(m.viewMap) {
@@ -863,6 +899,12 @@ func (m app) View() string {
 		b.WriteString(renderFilterPrompt(m.filterQuery, m.filtering))
 		b.WriteString("\n\n")
 	}
+	if m.active == tabQueue {
+		if t := m.queue.title(m.loaded[tabQueue] && len(m.items[tabQueue]) == 0); t != "" {
+			b.WriteString(activeTabStyle.Render(t))
+			b.WriteString("\n\n")
+		}
+	}
 	b.WriteString(m.lists[m.active].View())
 	b.WriteString("\n\n")
 	switch {
@@ -928,7 +970,7 @@ func (m app) hint() string {
 	if m.active == tabSearch {
 		find = "search"
 	}
-	base := "tab/1-5 switch · j/k move · / " + find + " · enter play · space pause"
+	base := "tab/1-5 switch · j/k move · / " + find + " · enter play · space pause · n/p next/prev"
 	if m.active != tabSearch {
 		base += " · r reload"
 	}
