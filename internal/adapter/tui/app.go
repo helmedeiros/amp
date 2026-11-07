@@ -74,6 +74,11 @@ type (
 		sig string
 		err error
 	}
+	takeOverMsg struct {
+		queued int
+		view   queueView
+		err    error
+	}
 	// flashClearMsg clears the transient success line after a short delay.
 	flashClearMsg struct{}
 	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
@@ -330,6 +335,22 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case takeOverMsg:
+		m.working = false
+		switch {
+		case msg.err != nil:
+			m.notice = "take over failed: " + msg.err.Error()
+			return m, nil
+		case msg.queued == 0:
+			m.notice = "nothing to take over: these tracks could not be copied into amp's queue"
+			return m, nil
+		}
+		flash := fmt.Sprintf("✓ took over %d track(s) into amp's queue", msg.queued)
+		if msg.view.src.Kind != music.SourcePlaylist {
+			flash += " (this album's tracks in your library)"
+		}
+		return m.Update(queuePlayedMsg{flash: flash})
+
 	case flashClearMsg:
 		m.flash = ""
 		return m, nil
@@ -421,8 +442,11 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lists[m.active].MoveUp()
 	case "enter":
 		if m.active == tabQueue && m.queue.following() {
-			m.notice = "this list follows Music.app — space pause · n next · p previous"
-			return m, nil
+			l := &m.lists[tabQueue]
+			if l.Len() == 0 {
+				return m, nil
+			}
+			return m.takeOver(m.orig(l.Cursor()), 0)
 		}
 		cmd := m.playSelection()
 		if cmd != nil && m.active == tabAlbums {
@@ -435,6 +459,10 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case " ":
 		return m, actionCmd(func() error { return m.ctrl.Toggle(m.ctx) })
+	case "t":
+		if m.active == tabQueue && m.queue.following() {
+			return m.takeOverPlaying()
+		}
 	case "n":
 		return m, actionCmd(func() error { return m.ctrl.Next(m.ctx) })
 	case "p":
@@ -688,17 +716,7 @@ func (m *app) applyView() {
 // or -1 when nothing is playing or the track is not in the queue. It honours the
 // active filter's view mapping so the marker lands on the right visible row.
 func (m app) playingQueueRow() int {
-	if !m.hasStatus || !m.status.HasTrack() {
-		return -1
-	}
-	want := trackKey(m.status.Track)
-	full := -1
-	for i, k := range m.keys[tabQueue] {
-		if k == want {
-			full = i
-			break
-		}
-	}
+	full := m.playingQueueIndex()
 	if full < 0 {
 		return -1
 	}
@@ -711,6 +729,42 @@ func (m app) playingQueueRow() int {
 		}
 	}
 	return -1 // playing track is filtered out of view
+}
+
+func (m app) playingQueueIndex() int {
+	if !m.hasStatus || !m.status.HasTrack() {
+		return -1
+	}
+	want := trackKey(m.status.Track)
+	for i, k := range m.keys[tabQueue] {
+		if k == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m app) takeOverPlaying() (tea.Model, tea.Cmd) {
+	start, pos := m.playingQueueIndex(), m.status.Elapsed
+	if start < 0 {
+		start, pos = 0, 0
+	}
+	return m.takeOver(start, pos)
+}
+
+func (m app) takeOver(start int, pos time.Duration) (tea.Model, tea.Cmd) {
+	if !m.loaded[tabQueue] || len(m.items[tabQueue]) == 0 {
+		m.notice = "nothing to take over: none of these tracks are in your library"
+		return m, nil
+	}
+	v := m.queue
+	m.working, m.workFrame, m.workLabel, m.flash = true, 0, "taking over from Music.app…", ""
+	ctx, ctrl := m.ctx, m.ctrl
+	run := func() tea.Msg {
+		n, err := ctrl.TakeOver(ctx, v.src, v.album, start, pos)
+		return takeOverMsg{queued: n, view: v, err: err}
+	}
+	return m, tea.Batch(run, workTick())
 }
 
 // syncQueue refreshes the Queue's playing marker from the current status. When
@@ -976,6 +1030,9 @@ func (m app) hint() string {
 	}
 	if m.active == tabArtists || m.active == tabAlbums {
 		base += " · a add albums"
+	}
+	if m.active == tabQueue && m.queue.following() {
+		base += " · t take over"
 	}
 	return base + " · q quit"
 }

@@ -40,6 +40,7 @@ type Player interface {
 	Queue(ctx context.Context) ([]music.Track, error)
 	CurrentPlaylistTracks(ctx context.Context) ([]music.Track, error)
 	AlbumTracks(ctx context.Context, album string) ([]music.Track, error)
+	TakeOver(ctx context.Context, src music.Source, album string, start int, position float64) (int, error)
 	// QueueAdd appends the search results to the queue and returns how many were
 	// added.
 	QueueAdd(ctx context.Context, query string, limit int) (int, error)

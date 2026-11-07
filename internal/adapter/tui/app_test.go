@@ -27,6 +27,9 @@ type stubController struct {
 	sourceTracks []music.Track
 	sourceAsked  queueView
 
+	takeOverQueued int
+	takeOverPos    time.Duration
+
 	sig string
 
 	calls      []string
@@ -75,6 +78,13 @@ func (s *stubController) SourceTracks(_ context.Context, src music.Source, album
 	s.calls = append(s.calls, "SourceTracks")
 	s.sourceAsked = queueView{src: src, album: album}
 	return s.sourceTracks, nil
+}
+
+func (s *stubController) TakeOver(_ context.Context, src music.Source, album string, start int, pos time.Duration) (int, error) {
+	s.calls = append(s.calls, "TakeOver")
+	s.sourceAsked = queueView{src: src, album: album}
+	s.playedIdx, s.takeOverPos = start, pos
+	return s.takeOverQueued, nil
 }
 
 func (s *stubController) Next(context.Context) error {
