@@ -102,6 +102,11 @@ func (f *fakeController) SourceTracks(context.Context, music.Source, string) ([]
 	return nil, nil
 }
 
+func (f *fakeController) TakeOver(context.Context, music.Source, string, int, time.Duration) (int, error) {
+	f.calls = append(f.calls, "TakeOver")
+	return 0, nil
+}
+
 func (f *fakeController) LibrarySignature(context.Context) (string, error) {
 	f.calls = append(f.calls, "LibrarySignature")
 	return "sig", nil

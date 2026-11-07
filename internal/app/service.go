@@ -263,6 +263,20 @@ func (s *Service) SourceTracks(ctx context.Context, src music.Source, album stri
 	}
 }
 
+// TakeOver moves playback started outside amp into amp's queue.
+func (s *Service) TakeOver(ctx context.Context, src music.Source, album string, start int, position time.Duration) (int, error) {
+	if !src.IsExternal() {
+		return 0, fmt.Errorf("take over: %s is not playback started outside amp", src.Kind)
+	}
+	if start < 0 {
+		return 0, fmt.Errorf("take over: negative index %d", start)
+	}
+	if position < 0 {
+		position = 0
+	}
+	return s.player.TakeOver(ctx, src, album, start, position.Seconds())
+}
+
 // QueueAdd appends the search results for a non-empty query to the queue and
 // returns how many were added.
 func (s *Service) QueueAdd(ctx context.Context, query string, limit int) (int, error) {

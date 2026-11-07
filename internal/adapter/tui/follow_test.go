@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/stretchr/testify/assert"
@@ -154,17 +156,109 @@ func TestAppSourceChangeOffQueueTabDefersLoad(t *testing.T) {
 	assert.False(t, m.loaded[tabQueue], "it reloads when the user switches to it")
 }
 
-func TestAppEnterOnFollowedQueueExplainsControls(t *testing.T) {
+func takeOverResult(t *testing.T, cmd tea.Cmd) takeOverMsg {
+	t.Helper()
+	for _, out := range drainBatch(cmd) {
+		if msg, ok := out.(takeOverMsg); ok {
+			return msg
+		}
+	}
+	t.Fatal("no takeOverMsg")
+	return takeOverMsg{}
+}
+
+func TestAppEnterOnFollowedQueueTakesOverFromThatRow(t *testing.T) {
 	t.Parallel()
 
-	ctrl := &stubController{sourceTracks: []music.Track{theGrid, derez}}
+	ctrl := &stubController{sourceTracks: []music.Track{theGrid, derez}, takeOverQueued: 2}
 	m := update(t, newFollowApp(ctrl), statusMsg(music.Status{Track: derez, Source: chill}))
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	m = next.(app)
 
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(app)
+	assert.True(t, m.working)
+	msg := takeOverResult(t, cmd)
+
+	assert.NotContains(t, ctrl.calls, "PlayQueueAt")
+	assert.Equal(t, queueView{src: chill}, ctrl.sourceAsked)
+	assert.Equal(t, 0, ctrl.playedIdx)
+	assert.Zero(t, ctrl.takeOverPos)
+
+	next, _ = m.Update(msg)
+	m = next.(app)
+	assert.False(t, m.working)
+	assert.False(t, m.queue.following())
+	assert.Equal(t, tabQueue, m.active)
+	assert.Contains(t, m.View(), "took over 2 track(s)")
+}
+
+func TestAppTKeyTakesOverAtThePlayingTrackAndPosition(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{sourceTracks: []music.Track{theGrid, derez}, takeOverQueued: 2}
+	status := music.Status{Track: derez, Elapsed: 42 * time.Second, Source: music.Source{Kind: music.SourceExternal}}
+	m := update(t, newFollowApp(ctrl), statusMsg(status))
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	msg := takeOverResult(t, cmd)
+
+	assert.Equal(t, queueView{src: music.Source{Kind: music.SourceExternal}, album: "TRON"}, ctrl.sourceAsked)
+	assert.Equal(t, 1, ctrl.playedIdx)
+	assert.Equal(t, 42*time.Second, ctrl.takeOverPos)
+
+	next, _ := m.Update(msg)
+	assert.Contains(t, next.(app).View(), "this album's tracks in your library")
+}
+
+func TestAppTKeyStartsFromTheTopWhenThePlayingTrackIsMissing(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{sourceTracks: []music.Track{theGrid}, takeOverQueued: 1}
+	status := music.Status{Track: derez, Elapsed: 42 * time.Second, Source: music.Source{Kind: music.SourceExternal}}
+	m := update(t, newFollowApp(ctrl), statusMsg(status))
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+	takeOverResult(t, cmd)
+
+	assert.Equal(t, 0, ctrl.playedIdx)
+	assert.Zero(t, ctrl.takeOverPos)
+}
+
+func TestAppTakeOverWithNothingToCopy(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	m := update(t, newFollowApp(ctrl), statusMsg(music.Status{Track: derez, Source: music.Source{Kind: music.SourceExternal}}))
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
 
 	assert.Nil(t, cmd)
-	assert.NotContains(t, ctrl.calls, "PlayQueueAt", "amp's queue must not play a row of another list")
-	assert.Contains(t, next.(app).View(), "this list follows Music.app")
+	assert.NotContains(t, ctrl.calls, "TakeOver")
+	assert.Contains(t, next.(app).View(), "none of these tracks are in your library")
+}
+
+func TestAppTakeOverFailureShowsNotice(t *testing.T) {
+	t.Parallel()
+
+	m := update(t, newFollowApp(&stubController{}), statusMsg(music.Status{Track: derez, Source: chill}))
+
+	next, _ := m.Update(takeOverMsg{err: errors.New("boom")})
+	assert.Contains(t, next.(app).View(), "take over failed: boom")
+	assert.True(t, next.(app).queue.following())
+
+	next, _ = m.Update(takeOverMsg{queued: 0, view: queueView{src: chill}})
+	assert.Contains(t, next.(app).View(), "could not be copied")
+}
+
+func TestAppTKeyIgnoredOnAmpQueue(t *testing.T) {
+	t.Parallel()
+
+	ctrl := &stubController{}
+	_, cmd := newTestApp(ctrl).Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("t")})
+
+	assert.Nil(t, cmd)
+	assert.Empty(t, ctrl.calls)
 }
 
 func TestAppNextAndPreviousKeys(t *testing.T) {

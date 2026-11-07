@@ -153,6 +153,12 @@ func (f *fakePlayer) AlbumTracks(_ context.Context, album string) ([]music.Track
 	return f.searchResult, nil
 }
 
+func (f *fakePlayer) TakeOver(_ context.Context, _ music.Source, album string, start int, position float64) (int, error) {
+	f.calls = append(f.calls, "TakeOver")
+	f.playedName, f.playStart, f.positionSet = album, start, position
+	return len(f.searchResult), nil
+}
+
 func (f *fakePlayer) QueueAdd(_ context.Context, query string, limit int) (int, error) {
 	f.calls = append(f.calls, "QueueAdd")
 	f.searchQuery, f.searchLimit = query, limit
@@ -887,4 +893,35 @@ func TestServiceSourceTracksRoutesBySource(t *testing.T) {
 			assert.Equal(t, tt.wantAlbum, fake.playedName)
 		})
 	}
+}
+
+func TestServiceTakeOver(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{searchResult: []music.Track{{Name: "a"}, {Name: "b"}}}
+	svc := app.NewService(fake, &memStore{})
+
+	n, err := svc.TakeOver(context.Background(), music.Source{Kind: music.SourceExternal}, "TRON", 2, 90*time.Second)
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, []string{"TakeOver"}, fake.calls)
+	assert.Equal(t, "TRON", fake.playedName)
+	assert.Equal(t, 2, fake.playStart)
+	assert.InDelta(t, 90.0, fake.positionSet, 0.001)
+}
+
+func TestServiceTakeOverRejectsBadInput(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakePlayer{}
+	svc := app.NewService(fake, &memStore{})
+
+	_, err := svc.TakeOver(context.Background(), music.Source{Kind: music.SourceQueue, Name: "amp queue"}, "", 0, 0)
+	require.Error(t, err, "amp's own queue is not taken over")
+
+	_, err = svc.TakeOver(context.Background(), music.Source{Kind: music.SourcePlaylist, Name: "Chill"}, "", -1, 0)
+	require.Error(t, err)
+
+	assert.Empty(t, fake.calls)
 }
