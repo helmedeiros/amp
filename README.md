@@ -100,6 +100,9 @@ amp status     # now served from the cache (~instant)
   as-is. A song started from the library view, or Apple Music streaming, shows
   the playing album's tracks that are in your library, because Music exposes
   no list for those. Music's "Up Next" can't be read, so it is never shown.
+- Take over a followed Queue to control it track by track: `Enter` copies the
+  list into amp's queue and plays from the highlighted row; `t` does the same
+  from the playing track, keeping its position so the music carries on.
 - Library tabs reload when you switch to them, and again whenever the library
   changes while you stay on Playlists, Artists, or Albums (checked every 5
   seconds with a cheap fingerprint, shared through `amd` when it runs; paused
