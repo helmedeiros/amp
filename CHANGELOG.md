@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-11-07
+
+### Added
+
+- **TUI: the Queue follows Music.app.** When playback starts outside amp (in
+  Music.app, with Siri, a remote, or media keys), the Queue switches to what is
+  playing, marks the current track, and names the source. A playlist is shown
+  as-is; a song started from the library view, or Apple Music streaming, shows
+  the playing album's tracks that are in your library. Music's "Up Next" can't
+  be read, so it is never shown.
+- **TUI: take over playback started elsewhere.** On a followed Queue, `Enter`
+  copies the list into amp's queue and plays from the highlighted row; `t` does
+  the same from the playing track and keeps its position.
+- **TUI: `n` / `p` skip to the next / previous track.**
+- **`amp status` shows where a track plays from.** A `from` row (amp queue,
+  playlist, library, or Apple Music), and a `source` object in `--json`. `amd`
+  forwards it; restart a running `amd` to pick it up.
+
 ## [0.8.0] - 2026-10-29
 
 ### Changed
@@ -168,6 +186,9 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.9.0]: https://github.com/helmedeiros/amp/releases/tag/v0.9.0
+[0.8.0]: https://github.com/helmedeiros/amp/releases/tag/v0.8.0
+[0.7.0]: https://github.com/helmedeiros/amp/releases/tag/v0.7.0
 [0.6.1]: https://github.com/helmedeiros/amp/releases/tag/v0.6.1
 [0.6.0]: https://github.com/helmedeiros/amp/releases/tag/v0.6.0
 [0.5.0]: https://github.com/helmedeiros/amp/releases/tag/v0.5.0
