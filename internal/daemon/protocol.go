@@ -28,12 +28,19 @@ type Response struct {
 
 // StatusDTO is the wire form of a player snapshot.
 type StatusDTO struct {
-	State          string    `json:"state"`
-	Volume         int       `json:"volume"`
-	Shuffle        bool      `json:"shuffle"`
-	Repeat         string    `json:"repeat"`
-	ElapsedSeconds float64   `json:"elapsed_seconds"`
-	Track          *TrackDTO `json:"track,omitempty"`
+	State          string     `json:"state"`
+	Volume         int        `json:"volume"`
+	Shuffle        bool       `json:"shuffle"`
+	Repeat         string     `json:"repeat"`
+	ElapsedSeconds float64    `json:"elapsed_seconds"`
+	Track          *TrackDTO  `json:"track,omitempty"`
+	Source         *SourceDTO `json:"source,omitempty"`
+}
+
+// SourceDTO is the wire form of a playback source.
+type SourceDTO struct {
+	Kind string `json:"kind"`
+	Name string `json:"name,omitempty"`
 }
 
 // TrackDTO is the wire form of a track.
@@ -61,6 +68,9 @@ func ToStatusDTO(s music.Status) StatusDTO {
 			DurationSeconds: s.Track.Duration.Seconds(),
 		}
 	}
+	if s.Source.Kind != music.SourceNone {
+		dto.Source = &SourceDTO{Kind: s.Source.Kind.String(), Name: s.Source.Name}
+	}
 	return dto
 }
 
@@ -84,6 +94,9 @@ func (dto StatusDTO) ToStatus() music.Status {
 			Album:    dto.Track.Album,
 			Duration: seconds(dto.Track.DurationSeconds),
 		}
+	}
+	if dto.Source != nil {
+		s.Source = music.Source{Kind: music.ParseSourceKind(dto.Source.Kind), Name: dto.Source.Name}
 	}
 	return s
 }

@@ -23,6 +23,7 @@ type Status struct {
 	Volume  Volume
 	Shuffle bool
 	Repeat  RepeatMode
+	Source  Source
 }
 
 // HasTrack reports whether a track is currently loaded.

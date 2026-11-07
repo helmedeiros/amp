@@ -39,6 +39,9 @@ func RenderStatus(s music.Status, theme Theme) string {
 		if s.Track.Album != "" {
 			row(theme.label(pad("album")), s.Track.Album)
 		}
+		if from := s.Source.Label(); from != "" {
+			row(theme.label(pad("from")), from)
+		}
 		row(theme.label(pad("time")), timeLine(s))
 		row(theme.label(pad("volume")), fmt.Sprintf("%d%%", s.Volume.Int()))
 		row(theme.label(pad("shuffle")), onOff(s.Shuffle))
@@ -215,12 +218,18 @@ func timeLine(s music.Status) string {
 
 // statusJSON is the stable machine-readable shape of a status snapshot.
 type statusJSON struct {
-	State          string     `json:"state"`
-	Volume         int        `json:"volume"`
-	Shuffle        bool       `json:"shuffle"`
-	Repeat         string     `json:"repeat"`
-	ElapsedSeconds float64    `json:"elapsed_seconds"`
-	Track          *trackJSON `json:"track,omitempty"`
+	State          string      `json:"state"`
+	Volume         int         `json:"volume"`
+	Shuffle        bool        `json:"shuffle"`
+	Repeat         string      `json:"repeat"`
+	ElapsedSeconds float64     `json:"elapsed_seconds"`
+	Track          *trackJSON  `json:"track,omitempty"`
+	Source         *sourceJSON `json:"source,omitempty"`
+}
+
+type sourceJSON struct {
+	Kind string `json:"kind"`
+	Name string `json:"name,omitempty"`
 }
 
 type trackJSON struct {
@@ -246,6 +255,9 @@ func RenderStatusJSON(s music.Status) string {
 			Album:           s.Track.Album,
 			DurationSeconds: s.Track.Duration.Seconds(),
 		}
+	}
+	if s.Source.Kind != music.SourceNone {
+		payload.Source = &sourceJSON{Kind: s.Source.Kind.String(), Name: s.Source.Name}
 	}
 
 	out, _ := json.Marshal(payload)

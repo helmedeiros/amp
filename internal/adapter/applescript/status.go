@@ -35,19 +35,46 @@ if (out.running) {
   } catch (e) {
     out.track = null;
   }
+  try {
+    const p = Music.currentPlaylist;
+    out.source = { class: p.class(), name: p.name() };
+  } catch (e) {
+    out.source = null;
+  }
 }
 JSON.stringify(out);
 `
 
 // statusDTO mirrors the JSON emitted by statusScript.
 type statusDTO struct {
-	Running bool     `json:"running"`
-	State   string   `json:"state"`
-	Volume  int      `json:"volume"`
-	Shuffle bool     `json:"shuffle"`
-	Repeat  string   `json:"repeat"`
-	Elapsed float64  `json:"elapsed"`
-	Track   trackDTO `json:"track"`
+	Running bool       `json:"running"`
+	State   string     `json:"state"`
+	Volume  int        `json:"volume"`
+	Shuffle bool       `json:"shuffle"`
+	Repeat  string     `json:"repeat"`
+	Elapsed float64    `json:"elapsed"`
+	Track   trackDTO   `json:"track"`
+	Source  *sourceDTO `json:"source"`
+}
+
+type sourceDTO struct {
+	Class string `json:"class"`
+	Name  string `json:"name"`
+}
+
+func toSource(src *sourceDTO, hasTrack bool) music.Source {
+	switch {
+	case !hasTrack:
+		return music.Source{}
+	case src == nil:
+		return music.Source{Kind: music.SourceExternal}
+	case src.Name == queuePlaylistName:
+		return music.Source{Kind: music.SourceQueue, Name: src.Name}
+	case src.Class == "libraryPlaylist":
+		return music.Source{Kind: music.SourceLibrary, Name: src.Name}
+	default:
+		return music.Source{Kind: music.SourcePlaylist, Name: src.Name}
+	}
 }
 
 // parseStatus maps the JSON status payload onto the domain Status. It returns
@@ -72,13 +99,15 @@ func parseStatus(raw []byte) (music.Status, error) {
 		return music.Status{}, err
 	}
 
+	track := dto.Track.toTrack()
 	return music.Status{
 		State:   state,
 		Volume:  music.NewVolume(dto.Volume),
 		Shuffle: dto.Shuffle,
 		Repeat:  repeat,
 		Elapsed: seconds(dto.Elapsed),
-		Track:   dto.Track.toTrack(),
+		Track:   track,
+		Source:  toSource(dto.Source, !track.IsZero()),
 	}, nil
 }
 
