@@ -42,6 +42,7 @@ type Controller interface {
 	PlayQueueAt(ctx context.Context, index int) error
 	// Queue returns the tracks currently in the queue.
 	Queue(ctx context.Context) ([]music.Track, error)
+	SourceTracks(ctx context.Context, src music.Source, album string) ([]music.Track, error)
 	// QueueAdd appends the search results to the queue and returns how many were
 	// added.
 	QueueAdd(ctx context.Context, query string, limit int) (int, error)

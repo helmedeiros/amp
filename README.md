@@ -92,7 +92,14 @@ amp status     # now served from the cache (~instant)
 - Tabs: **Queue, Playlists, Artists, Albums, Search** — switch with `Tab` /
   `Shift-Tab` or number keys `1`–`5`.
 - `j`/`k` move, `Enter` plays the highlighted item, `space` toggles play/pause,
-  `/` types a search query, `r` refreshes, `q` quits.
+  `n`/`p` skip to the next/previous track, `/` types a search query, `r`
+  refreshes, `q` quits.
+- The Queue follows Music.app. When playback starts outside amp (in Music.app,
+  with Siri, a remote, or media keys), the Queue switches to what is playing,
+  marks the current track, and says where it comes from. A playlist is shown
+  as-is. A song started from the library view, or Apple Music streaming, shows
+  the playing album's tracks that are in your library, because Music exposes
+  no list for those. Music's "Up Next" can't be read, so it is never shown.
 - Library tabs reload when you switch to them, and again whenever the library
   changes while you stay on Playlists, Artists, or Albums (checked every 5
   seconds with a cheap fingerprint, shared through `amd` when it runs; paused

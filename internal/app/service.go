@@ -248,6 +248,21 @@ func (s *Service) Queue(ctx context.Context) ([]music.Track, error) {
 	return s.player.Queue(ctx)
 }
 
+// SourceTracks returns the tracks of the context Music.app is playing from.
+func (s *Service) SourceTracks(ctx context.Context, src music.Source, album string) ([]music.Track, error) {
+	switch src.Kind {
+	case music.SourcePlaylist:
+		return s.player.CurrentPlaylistTracks(ctx)
+	case music.SourceLibrary, music.SourceExternal:
+		if strings.TrimSpace(album) == "" {
+			return nil, nil
+		}
+		return s.player.AlbumTracks(ctx, album)
+	default:
+		return s.player.Queue(ctx)
+	}
+}
+
 // QueueAdd appends the search results for a non-empty query to the queue and
 // returns how many were added.
 func (s *Service) QueueAdd(ctx context.Context, query string, limit int) (int, error) {

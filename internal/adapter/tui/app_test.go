@@ -24,6 +24,9 @@ type stubController struct {
 
 	searchResult []music.Track
 
+	sourceTracks []music.Track
+	sourceAsked  queueView
+
 	sig string
 
 	calls      []string
@@ -68,6 +71,22 @@ func (s *stubController) PlayQuery(_ context.Context, query string, _ int) (port
 	return s.playResult, nil
 }
 
+func (s *stubController) SourceTracks(_ context.Context, src music.Source, album string) ([]music.Track, error) {
+	s.calls = append(s.calls, "SourceTracks")
+	s.sourceAsked = queueView{src: src, album: album}
+	return s.sourceTracks, nil
+}
+
+func (s *stubController) Next(context.Context) error {
+	s.calls = append(s.calls, "Next")
+	return nil
+}
+
+func (s *stubController) Previous(context.Context) error {
+	s.calls = append(s.calls, "Previous")
+	return nil
+}
+
 func (s *stubController) Toggle(context.Context) error {
 	s.calls = append(s.calls, "Toggle")
 	return nil
@@ -108,20 +127,20 @@ func TestFetchTab(t *testing.T) {
 		albums:    []music.Album{{Name: "Discovery", Artist: "Daft Punk"}},
 	}
 
-	q, _, qk, _ := fetchTab(context.Background(), ctrl, tabQueue)
+	q, _, qk, _ := fetchTab(context.Background(), ctrl, tabQueue, queueView{})
 	assert.Equal(t, []string{"Utsu-P — Gorgon"}, q)
 	assert.Equal(t, []string{"utsu-p  gorgon"}, qk, "queue key carries artist+album+title")
 
-	p, pv, pk, _ := fetchTab(context.Background(), ctrl, tabPlaylists)
+	p, pv, pk, _ := fetchTab(context.Background(), ctrl, tabPlaylists, queueView{})
 	assert.Equal(t, []string{"Chill  (42)"}, p)
 	assert.Equal(t, []string{"Chill"}, pv, "playlist action value is the name")
 	assert.Equal(t, []string{"chill daft punk"}, pk, "playlist key carries its artists")
 
-	a, av, _, _ := fetchTab(context.Background(), ctrl, tabArtists)
+	a, av, _, _ := fetchTab(context.Background(), ctrl, tabArtists, queueView{})
 	assert.Equal(t, []string{"Daft Punk"}, a)
 	assert.Equal(t, []string{"Daft Punk"}, av)
 
-	al, alv, alk, _ := fetchTab(context.Background(), ctrl, tabAlbums)
+	al, alv, alk, _ := fetchTab(context.Background(), ctrl, tabAlbums, queueView{})
 	assert.Equal(t, []string{"Daft Punk — Discovery"}, al, "album line shows artist")
 	assert.Equal(t, []string{"Discovery"}, alv, "album play target is the name")
 	assert.Equal(t, []string{"discovery daft punk"}, alk)
