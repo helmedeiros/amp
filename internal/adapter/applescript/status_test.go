@@ -103,3 +103,54 @@ func TestParseStatusErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestParseStatusSource(t *testing.T) {
+	t.Parallel()
+
+	const track = `"track": {"name": "Derezzed", "artist": "Daft Punk", "album": "TRON", "duration": 104.0}`
+	tests := []struct {
+		name   string
+		source string
+		track  string
+		want   music.Source
+	}{
+		{
+			name: "amp queue", source: `{"class": "userPlaylist", "name": "amp queue"}`, track: track,
+			want: music.Source{Kind: music.SourceQueue, Name: "amp queue"},
+		},
+		{
+			name: "user playlist", source: `{"class": "userPlaylist", "name": "Chill"}`, track: track,
+			want: music.Source{Kind: music.SourcePlaylist, Name: "Chill"},
+		},
+		{
+			name: "subscription playlist", source: `{"class": "subscriptionPlaylist", "name": "Today's Hits"}`, track: track,
+			want: music.Source{Kind: music.SourcePlaylist, Name: "Today's Hits"},
+		},
+		{
+			name: "library", source: `{"class": "libraryPlaylist", "name": "Library"}`, track: track,
+			want: music.Source{Kind: music.SourceLibrary, Name: "Library"},
+		},
+		{
+			name: "streaming", source: `null`, track: track,
+			want: music.Source{Kind: music.SourceExternal},
+		},
+		{
+			name: "no track", source: `{"class": "userPlaylist", "name": "Chill"}`, track: `"track": null`,
+			want: music.Source{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			raw := []byte(`{"running": true, "state": "playing", "volume": 50, "repeat": "off", ` +
+				tt.track + `, "source": ` + tt.source + `}`)
+
+			got, err := parseStatus(raw)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.Source)
+		})
+	}
+}

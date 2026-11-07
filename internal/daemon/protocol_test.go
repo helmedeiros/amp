@@ -25,6 +25,7 @@ func TestStatusDTORoundTrip(t *testing.T) {
 			Album:    "Unknown Album",
 			Duration: 255 * time.Second,
 		},
+		Source: music.Source{Kind: music.SourcePlaylist, Name: "Chill"},
 	}
 
 	got := daemon.ToStatusDTO(want).ToStatus()
@@ -38,5 +39,6 @@ func TestStatusDTONoTrack(t *testing.T) {
 	dto := daemon.ToStatusDTO(music.Status{State: music.Stopped, Volume: music.NewVolume(30)})
 
 	assert.Nil(t, dto.Track)
+	assert.Nil(t, dto.Source)
 	assert.False(t, dto.ToStatus().HasTrack())
 }

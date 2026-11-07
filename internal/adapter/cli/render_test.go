@@ -247,3 +247,34 @@ func TestFormatClock(t *testing.T) {
 		assert.Equal(t, tt.want, cli.FormatClock(tt.in))
 	}
 }
+
+func TestRenderStatusShowsSource(t *testing.T) {
+	t.Parallel()
+
+	s := playingStatus()
+	assert.NotContains(t, cli.RenderStatus(s, cli.PlainTheme), "from", "unknown source is not shown")
+
+	s.Source = music.Source{Kind: music.SourcePlaylist, Name: "Chill"}
+	assert.Contains(t, cli.RenderStatus(s, cli.PlainTheme), "from     playlist “Chill”")
+}
+
+func TestRenderStatusJSONSource(t *testing.T) {
+	t.Parallel()
+
+	s := playingStatus()
+	s.Source = music.Source{Kind: music.SourceExternal}
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cli.RenderStatusJSON(s)), &payload))
+
+	assert.Equal(t, map[string]any{"kind": "external"}, payload["source"])
+}
+
+func TestRenderStatusJSONOmitsUnknownSource(t *testing.T) {
+	t.Parallel()
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cli.RenderStatusJSON(playingStatus())), &payload))
+
+	assert.NotContains(t, payload, "source")
+}
