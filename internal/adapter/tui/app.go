@@ -256,6 +256,15 @@ func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID, view queueVi
 }
 
 func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	if a, ok := next.(app); ok {
+		a.resizeLists()
+		return a, cmd
+	}
+	return next, cmd
+}
+
+func (m app) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
 		m.status, m.hasStatus = music.Status(msg), true
@@ -393,7 +402,6 @@ func (m app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.resizeLists()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -920,8 +928,7 @@ func (m app) switchTab(to tabID) (tea.Model, tea.Cmd) {
 }
 
 func (m *app) resizeLists() {
-	// Leave room for the header (~4 lines), the tab bar, and the footer.
-	h := m.height - 8
+	h := m.height - strings.Count(m.viewTop(), "\n") - strings.Count(m.viewBottom(), "\n")
 	if h < 3 {
 		h = 3
 	}
@@ -934,16 +941,20 @@ func (m app) View() string {
 	if m.quitting {
 		return ""
 	}
+	if m.picking {
+		return m.viewTop() + m.renderPicker() + "\n\n" +
+			dimStyle.Render("j/k move · space toggle · a all/none · enter add · esc cancel")
+	}
+	return m.viewTop() + m.lists[m.active].View() + m.viewBottom()
+}
 
+func (m app) viewTop() string {
 	var b strings.Builder
 	b.WriteString(renderHeader(m.status, m.hasStatus, m.catalogOn))
 	b.WriteString("\n\n")
 	b.WriteString(renderTabBar(m.active))
 	b.WriteString("\n\n")
 	if m.picking {
-		b.WriteString(m.renderPicker())
-		b.WriteString("\n\n")
-		b.WriteString(dimStyle.Render("j/k move · space toggle · a all/none · enter add · esc cancel"))
 		return b.String()
 	}
 	if m.active == tabSearch {
@@ -959,7 +970,11 @@ func (m app) View() string {
 			b.WriteString("\n\n")
 		}
 	}
-	b.WriteString(m.lists[m.active].View())
+	return b.String()
+}
+
+func (m app) viewBottom() string {
+	var b strings.Builder
 	b.WriteString("\n\n")
 	switch {
 	case m.working:
