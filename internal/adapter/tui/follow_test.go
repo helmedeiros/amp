@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,6 +102,24 @@ func TestAppQueueFollowsPlaybackStartedInMusic(t *testing.T) {
 	assert.Equal(t, 1, m.lists[tabQueue].marker, "the playing track is marked")
 	assert.Equal(t, 1, m.lists[tabQueue].Cursor(), "the cursor follows it")
 	assert.Contains(t, m.View(), "Following Music.app · playlist “Chill”")
+}
+
+func TestAppFollowedQueueFitsTheTerminal(t *testing.T) {
+	t.Parallel()
+
+	tracks := make([]music.Track, 40)
+	for i := range tracks {
+		tracks[i] = music.Track{Name: fmt.Sprintf("Song %d", i), Artist: "Daft Punk", Album: "TRON"}
+	}
+	ctrl := &stubController{sourceTracks: tracks}
+	m := update(t, newFollowApp(ctrl), tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	m = update(t, m, statusMsg(music.Status{State: music.Playing, Track: tracks[20], Source: chill}))
+
+	view := m.View()
+	assert.Equal(t, 30, strings.Count(view, "\n")+1, "the frame fills the terminal exactly")
+	assert.True(t, strings.HasPrefix(view, stateStyle[music.Playing].Render("PLAYING")), "the header stays on screen")
+	assert.Contains(t, view, "Following Music.app")
 }
 
 func TestAppQueueReturnsToAmpQueue(t *testing.T) {
