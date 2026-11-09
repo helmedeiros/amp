@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-11-09
+
+### Fixed
+
+- **TUI: the player header stays on screen.** The list height assumed a fixed
+  amount of chrome, so a playing track's header (and, on the Queue, the
+  "Following Music.app" title) pushed the frame past the terminal and scrolled
+  the header off the top. Lists now fit whatever is drawn around them.
+
 ## [0.9.0] - 2026-11-07
 
 ### Added
@@ -186,6 +195,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.9.1]: https://github.com/helmedeiros/amp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/helmedeiros/amp/releases/tag/v0.9.0
 [0.8.0]: https://github.com/helmedeiros/amp/releases/tag/v0.8.0
 [0.7.0]: https://github.com/helmedeiros/amp/releases/tag/v0.7.0
