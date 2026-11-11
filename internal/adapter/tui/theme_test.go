@@ -56,7 +56,7 @@ func TestAppDrawsThroughTheThemeLayout(t *testing.T) {
 
 	assert.True(t, strings.HasPrefix(view, "HEADER\n\n1 Queue"), view)
 	assert.Contains(t, view, "BODY 4 rows")
-	assert.Equal(t, screen{status: st, hasStatus: true, catalogOn: true, width: 100}, seen)
+	assert.Equal(t, screen{status: st, hasStatus: true, catalogOn: true, width: 100, tab: tabQueue, tracks: goldenQueue(), playing: 1}, seen)
 }
 
 func TestThemeGlyphsDriveTheRender(t *testing.T) {

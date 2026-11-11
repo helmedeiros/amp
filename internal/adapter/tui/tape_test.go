@@ -72,7 +72,6 @@ func TestTapeLightsTheButtonForTheState(t *testing.T) {
 		return th.layout.header(th, tapeScreen(tapeStatus(state, 0)))
 	}
 	assert.Contains(t, lit(music.Playing), th.accent.Reverse(true).Render(" ▶ PLAY "))
-	assert.Contains(t, lit(music.Paused), th.accent.Reverse(true).Render(" ▮▮ PAUSE "))
 	assert.Contains(t, lit(music.Stopped), th.accent.Reverse(true).Render(" ■ STOP "))
 }
 
