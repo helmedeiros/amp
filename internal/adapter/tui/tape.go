@@ -58,12 +58,15 @@ func (tapeLayout) header(t theme, sc screen) string {
 		return flatLayout{}.header(t, sc)
 	}
 	s := sc.status
+	if s.State == music.Paused {
+		return spine(t, sc)
+	}
 	rows := []string{
 		"╭" + strings.Repeat("─", tapeWidth-2) + "╮",
 		deckRow(spread(t.track.Render(t.tape.brand), deckStatus(t, sc), deckInner)),
 		deckRow("┌" + strings.Repeat("─", deckInner-2) + "┐"),
 	}
-	for _, r := range cassette(t, s) {
+	for _, r := range cassette(t, s, sideOf(sc.tracks, t.tape.minutes, sc.playing)) {
 		rows = append(rows, deckRow("│ "+fit(r, labelInner)+" │"))
 	}
 	rows = append(rows,
@@ -74,9 +77,31 @@ func (tapeLayout) header(t theme, sc screen) string {
 	return strings.Join(rows, "\n")
 }
 
-func (tapeLayout) body(t theme, _ screen, l list) string { return l.View(t) }
+func (tapeLayout) body(t theme, sc screen, l list) string {
+	if sc.status.State != music.Paused || sc.tab != tabQueue || sc.width < tapeWidth || len(sc.tracks) == 0 || len(sc.tracks) != l.Len() || l.height <= jcardChrome {
+		return l.View(t)
+	}
+	return jcard(t, l, sc.tracks)
+}
 
-func cassette(t theme, s music.Status) []string {
+func spine(t theme, sc screen) string {
+	s := sc.status
+	title := "— no tape —"
+	if s.HasTrack() {
+		title = strings.ToUpper(artistTitle(s.Track))
+	}
+	label := t.accent.Render(sideOf(sc.tracks, t.tape.minutes, sc.playing)) + "  " + t.track.Render(truncate(title, deckInner-24))
+	state := t.state(s.State).Render("▮▮ PAUSED") + " " + clock(s.Elapsed)
+	brand := "─ " + t.tape.brand + " "
+	length := fmt.Sprintf(" C%d ─", t.tape.minutes)
+	return strings.Join([]string{
+		"╭" + brand + strings.Repeat("─", tapeWidth-2-lipgloss.Width(brand)-lipgloss.Width(length)) + length + "╮",
+		deckRow(spread(label, state, deckInner)),
+		"╰" + strings.Repeat("─", tapeWidth-2) + "╯",
+	}, "\n")
+}
+
+func cassette(t theme, s music.Status, side string) []string {
 	title, album := t.dim.Render("— no tape —"), ""
 	if s.HasTrack() {
 		title = t.track.Render(truncate(artistTitle(s.Track), labelInner-3))
@@ -89,7 +114,7 @@ func cassette(t theme, s music.Status) []string {
 		clocks = clock(s.Elapsed) + " / " + clock(s.Track.Duration)
 	}
 	return []string{
-		t.accent.Render("A") + "  " + title,
+		t.accent.Render(side) + "  " + title,
 		"   " + album,
 		t.accent.Render(strings.Repeat("━", labelInner)),
 		center(window, labelInner),
