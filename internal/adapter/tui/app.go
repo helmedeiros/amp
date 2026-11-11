@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -13,8 +12,6 @@ import (
 	"github.com/helmedeiros/amp/internal/music"
 	"github.com/helmedeiros/amp/internal/port"
 )
-
-const headerBarWidth = 40
 
 // tabID identifies a content tab.
 type tabID int
@@ -68,6 +65,7 @@ type (
 	}
 	// flashClearMsg clears the transient success line after a short delay.
 	flashClearMsg struct{}
+	themeSaveMsg  struct{ err error }
 	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
 	artistAlbumsMsg struct {
 		artist string
@@ -173,7 +171,10 @@ type app struct {
 	// catalogOn reflects whether Apple Music is connected, shown in the header.
 	catalogOn bool
 
-	theme theme
+	theme     theme
+	themes    []theme
+	themeIdx  int
+	saveTheme func(string) error
 }
 
 func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) app {
@@ -354,6 +355,13 @@ func (m app) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		return m, nil
 
+	case themeSaveMsg:
+		if msg.err != nil {
+			m.flash = ""
+			m.notice = "theme not saved: " + msg.err.Error()
+		}
+		return m, nil
+
 	case artistAlbumsMsg:
 		m.working = false
 		if msg.err != nil {
@@ -461,6 +469,8 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.active == tabQueue && m.queue.following() {
 			return m.takeOverPlaying()
 		}
+	case "T":
+		return m.nextTheme()
 	case "n":
 		return m, actionCmd(func() error { return m.ctrl.Next(m.ctx) })
 	case "p":
@@ -935,12 +945,16 @@ func (m app) View() string {
 		return m.viewTop() + m.renderPicker() + "\n\n" +
 			m.theme.dim.Render("j/k move · space toggle · a all/none · enter add · esc cancel")
 	}
-	return m.viewTop() + m.lists[m.active].View(m.theme) + m.viewBottom()
+	return m.viewTop() + m.theme.layout.body(m.theme, m.screen(), m.lists[m.active]) + m.viewBottom()
+}
+
+func (m app) screen() screen {
+	return screen{status: m.status, hasStatus: m.hasStatus, catalogOn: m.catalogOn, width: m.width}
 }
 
 func (m app) viewTop() string {
 	var b strings.Builder
-	b.WriteString(m.theme.header(m.status, m.hasStatus, m.catalogOn))
+	b.WriteString(m.theme.layout.header(m.theme, m.screen()))
 	b.WriteString("\n\n")
 	b.WriteString(m.theme.tabBar(m.active))
 	b.WriteString("\n\n")
@@ -972,7 +986,7 @@ func (m app) viewBottom() string {
 		if label == "" {
 			label = "working…"
 		}
-		b.WriteString(m.theme.current.Render(loadBar(m.workFrame, 24)) + "  " + m.theme.dim.Render(label))
+		b.WriteString(m.theme.current.Render(m.theme.loadBar(m.workFrame, 24)) + "  " + m.theme.dim.Render(label))
 		b.WriteString("\n\n")
 	case m.flash != "":
 		b.WriteString(m.theme.current.Render(m.flash))
@@ -1003,7 +1017,7 @@ func (m app) renderPicker() string {
 		}
 		line := fmt.Sprintf("%s %s  %s", box, a.Name, m.theme.dim.Render(fmt.Sprintf("%d tracks", a.TrackCount)))
 		if i == m.pickCursor {
-			b.WriteString("▶ " + m.theme.selected.Render(line) + "\n")
+			b.WriteString(m.theme.glyphs.cursor + " " + m.theme.selected.Render(line) + "\n")
 		} else {
 			b.WriteString("  " + line + "\n")
 		}
@@ -1039,7 +1053,27 @@ func (m app) hint() string {
 	if m.active == tabQueue && m.queue.following() {
 		base += " · t take over"
 	}
+	if len(m.themes) > 1 {
+		base += " · T theme"
+	}
 	return base + " · q quit"
+}
+
+func (m *app) useThemes(set themeSet, save func(string) error) {
+	m.themes, m.themeIdx, m.saveTheme = set.themes, set.current, save
+	m.theme = set.themes[set.current]
+	m.notice = strings.Join(set.warnings, " · ")
+}
+
+func (m app) nextTheme() (tea.Model, tea.Cmd) {
+	if len(m.themes) < 2 {
+		return m, nil
+	}
+	m.themeIdx = (m.themeIdx + 1) % len(m.themes)
+	m.theme = m.themes[m.themeIdx]
+	m.flash = "theme: " + m.theme.name
+	name, save := m.theme.name, m.saveTheme
+	return m, tea.Batch(func() tea.Msg { return themeSaveMsg{err: save(name)} }, clearFlashAfter())
 }
 
 func (t theme) filterPrompt(query string, editing bool) string {
@@ -1071,38 +1105,6 @@ func (t theme) tabBar(active tabID) string {
 		parts[i] = label
 	}
 	return strings.Join(parts, "   ")
-}
-
-func (t theme) header(s music.Status, hasStatus, catalogOn bool) string {
-	if !hasStatus {
-		return t.dim.Render("connecting…")
-	}
-
-	var b strings.Builder
-	b.WriteString(t.state(s.State).Render(strings.ToUpper(s.State.String())))
-	if s.HasTrack() {
-		fmt.Fprintf(&b, "\n%s", t.track.Render(artistTitle(s.Track)))
-		if s.Track.Album != "" {
-			fmt.Fprintf(&b, "\n%s", t.dim.Render(s.Track.Album))
-		}
-		fmt.Fprintf(&b, "\n%s %s %s  %s",
-			clock(s.Elapsed), bar(s.Progress(), headerBarWidth), clock(s.Track.Duration),
-			t.dim.Render(fmt.Sprintf("%d%%", int(math.Round(s.Progress()*100)))),
-		)
-	}
-	fmt.Fprintf(&b, "\n%s", t.dim.Render(fmt.Sprintf("vol %d%%", s.Volume.Int())))
-	if s.Shuffle {
-		b.WriteString(t.dim.Render("  shuffle"))
-	}
-	if s.Repeat != music.RepeatOff {
-		b.WriteString(t.dim.Render("  repeat " + s.Repeat.String()))
-	}
-	tag := "  · Apple Music off"
-	if catalogOn {
-		tag = "  · Apple Music ✓"
-	}
-	b.WriteString(t.dim.Render(tag))
-	return b.String()
 }
 
 func trackLines(tracks []music.Track) []string {
@@ -1214,42 +1216,15 @@ func clock(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", total/60, total%60)
 }
 
-// loadBar renders an indeterminate progress bar: a lit window that slides back
-// and forth across a track, animated by frame, so ongoing work reads as motion.
-func loadBar(frame, width int) string {
-	if width < 8 {
-		width = 8
-	}
-	const win = 6
-	span := 2 * (width - win) // one full there-and-back cycle
-	p := frame % span
-	pos := p
-	if p > width-win {
-		pos = span - p // reflect on the return trip
-	}
-	var b strings.Builder
-	for i := 0; i < width; i++ {
-		if i >= pos && i < pos+win {
-			b.WriteString("▓")
-		} else {
-			b.WriteString("░")
-		}
-	}
-	return b.String()
-}
-
-func bar(fraction float64, width int) string {
-	if width <= 0 {
-		return ""
-	}
-	fraction = math.Max(0, math.Min(1, fraction))
-	filled := int(math.Round(fraction * float64(width)))
-	return strings.Repeat("━", filled) + strings.Repeat("─", width-filled)
-}
-
 // RunApp runs the tabbed TUI until the user quits or ctx is cancelled.
-func RunApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) error {
-	p := tea.NewProgram(newApp(ctx, ctrl, stream), tea.WithAltScreen(), tea.WithContext(ctx))
-	_, err := p.Run()
+func RunApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status, opts Options) error {
+	set, err := resolveThemes(lipgloss.DefaultRenderer(), opts)
+	if err != nil {
+		return err
+	}
+	m := newApp(ctx, ctrl, stream)
+	m.useThemes(set, func(name string) error { return saveThemeName(opts.ConfigDir, name) })
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+	_, err = p.Run()
 	return err
 }

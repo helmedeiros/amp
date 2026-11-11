@@ -564,3 +564,15 @@ func TestRepeatCommandRejectsUnknownMode(t *testing.T) {
 
 	require.Error(t, cmd.Execute())
 }
+
+func TestTuiCommandTakesATheme(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	cmd := cli.NewRootCmd(&fakeController{}, nil)
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"tui", "--theme", "flat"})
+
+	require.EqualError(t, cmd.Execute(), "tui: no status stream configured")
+}
