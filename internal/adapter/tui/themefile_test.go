@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,4 +280,19 @@ func drainBatchSkippingTicks(cmd tea.Cmd) []tea.Msg {
 		}
 	}
 	return out
+}
+
+func TestReadmeThemeExampleIsValid(t *testing.T) {
+	t.Parallel()
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "..", "README.md"))
+	require.NoError(t, err)
+	_, example, found := strings.Cut(string(readme), "```toml\n")
+	require.True(t, found, "README has a TOML theme example")
+	example, _, _ = strings.Cut(example, "```")
+
+	th, err := parseTheme(trueColorRenderer(), []byte(example))
+	require.NoError(t, err)
+	assert.Equal(t, "sony-ef90", th.name)
+	assert.Equal(t, tapeInfo{brand: "SONY", kind: "EF90 TYPE I (NORMAL)", minutes: 90}, th.tape)
 }

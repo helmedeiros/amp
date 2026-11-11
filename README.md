@@ -93,7 +93,7 @@ amp status     # now served from the cache (~instant)
   `Shift-Tab` or number keys `1`–`5`.
 - `j`/`k` move, `Enter` plays the highlighted item, `space` toggles play/pause,
   `n`/`p` skip to the next/previous track, `/` types a search query, `r`
-  refreshes, `q` quits.
+  refreshes, `T` switches theme, `q` quits.
 - The Queue follows Music.app. When playback starts outside amp (in Music.app,
   with Siri, a remote, or media keys), the Queue switches to what is playing,
   marks the current track, and says where it comes from. A playlist is shown
@@ -113,6 +113,44 @@ amp status     # now served from the cache (~instant)
 amd &        # optional: event-driven updates
 amp tui
 ```
+
+### Themes
+
+Two themes ship: `flat`, the default, and `tape`, which draws the player as a
+cassette deck while playing (reels that trade tape as the track runs, a counter,
+the pressed transport button) and, while paused, lays the Queue out as a J-card
+with side A and side B split at half the tape. `T` cycles themes and amp
+remembers the last one; `amp tui --theme tape` picks one at start.
+
+Make your own by dropping a TOML file in `~/Library/Application
+Support/amp/themes/`. It picks a layout and overrides what it wants; the rest
+comes from that layout's theme:
+
+```toml
+name = "sony-ef90"
+layout = "tape"            # flat or tape
+
+[colors]                   # ANSI 0–255 or #hex
+playing = "#7FD39B"
+accent = "#2B6CB0"         # label stripe and pressed button
+selected = "#F2EEE3"
+
+[glyphs]                   # one column each
+cursor = "›"
+marker = "♫"
+fill = "▓"
+empty = "░"
+
+[tape]
+brand = "SONY"
+type = "EF90 TYPE I (NORMAL)"
+minutes = 90               # side B starts past half
+```
+
+Color keys: `playing`, `paused`, `stopped`, `track`, `dim`, `accent`,
+`selected`, `current`, `notice`. Glyph keys: `cursor`, `marker`, `fill`,
+`empty`, `load_on`, `load_off`. A broken file is reported in the TUI and
+skipped. See [ADR-0006](docs/adr/0006-tui-themes-layout-and-skin.md).
 
 ## Shell completion
 
