@@ -36,6 +36,7 @@ type (
 		items  []string
 		values []string
 		keys   []string // per-row filter keys (lowercased; may include artists)
+		tracks []music.Track
 		view   queueView
 		err    error
 	}
@@ -171,6 +172,8 @@ type app struct {
 	// catalogOn reflects whether Apple Music is connected, shown in the header.
 	catalogOn bool
 
+	queueTracks []music.Track
+
 	theme     theme
 	themes    []theme
 	themeIdx  int
@@ -212,6 +215,10 @@ func waitForStatus(stream <-chan music.Status) tea.Cmd {
 func (m app) loadTab(tab tabID) tea.Cmd {
 	ctx, ctrl, view := m.ctx, m.ctrl, m.queue
 	return func() tea.Msg {
+		if tab == tabQueue {
+			ts, err := queueTracks(ctx, ctrl, view)
+			return tabItemsMsg{tab: tab, items: trackLines(ts), keys: trackKeys(ts), tracks: ts, view: view, err: err}
+		}
 		items, values, keys, err := fetchTab(ctx, ctrl, tab, view)
 		return tabItemsMsg{tab: tab, items: items, values: values, keys: keys, view: view, err: err}
 	}
@@ -222,15 +229,17 @@ func (m app) loadTab(tab tabID) tea.Cmd {
 // filter keys. A key is what `/` matches against and may carry more than the
 // visible line — e.g. a playlist's artists — so filtering by an artist finds
 // playlists that merely contain them.
+func queueTracks(ctx context.Context, ctrl port.Controller, view queueView) ([]music.Track, error) {
+	if view.following() {
+		return ctrl.SourceTracks(ctx, view.src, view.album)
+	}
+	return ctrl.Queue(ctx)
+}
+
 func fetchTab(ctx context.Context, ctrl port.Controller, tab tabID, view queueView) (items, values, keys []string, err error) {
 	switch tab {
 	case tabQueue:
-		var ts []music.Track
-		if view.following() {
-			ts, err = ctrl.SourceTracks(ctx, view.src, view.album)
-		} else {
-			ts, err = ctrl.Queue(ctx)
-		}
+		ts, err := queueTracks(ctx, ctrl, view)
 		return trackLines(ts), nil, trackKeys(ts), err
 	case tabPlaylists:
 		ps, err := ctrl.Playlists(ctx)
@@ -276,6 +285,9 @@ func (m app) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.values[msg.tab] = msg.values
 			m.keys[msg.tab] = msg.keys
 			m.loaded[msg.tab] = true
+			if msg.tab == tabQueue {
+				m.queueTracks = msg.tracks
+			}
 			m.refreshView(msg.tab)
 			if hadPrev && msg.tab != tabQueue {
 				m.reselect(msg.tab, prev)
@@ -949,7 +961,14 @@ func (m app) View() string {
 }
 
 func (m app) screen() screen {
-	return screen{status: m.status, hasStatus: m.hasStatus, catalogOn: m.catalogOn, width: m.width}
+	sc := screen{status: m.status, hasStatus: m.hasStatus, catalogOn: m.catalogOn, width: m.width, tab: m.active, playing: -1}
+	if len(m.queueTracks) == len(m.items[tabQueue]) {
+		sc.tracks, sc.playing = m.queueTracks, m.playingQueueIndex()
+		if m.active == tabQueue && m.viewMap != nil {
+			sc.tracks = nil
+		}
+	}
+	return sc
 }
 
 func (m app) viewTop() string {

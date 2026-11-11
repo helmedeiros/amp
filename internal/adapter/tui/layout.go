@@ -15,6 +15,9 @@ type screen struct {
 	hasStatus bool
 	catalogOn bool
 	width     int
+	tab       tabID
+	tracks    []music.Track
+	playing   int
 }
 
 type layout interface {

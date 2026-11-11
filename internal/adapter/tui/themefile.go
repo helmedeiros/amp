@@ -50,16 +50,21 @@ type themeFile struct {
 		LoadOn  *string `toml:"load_on"`
 		LoadOff *string `toml:"load_off"`
 	} `toml:"glyphs"`
+	Tape struct {
+		Brand   *string `toml:"brand"`
+		Kind    *string `toml:"type"`
+		Minutes *int    `toml:"minutes"`
+	} `toml:"tape"`
 }
 
 var (
-	layouts   = map[string]func(*lipgloss.Renderer) theme{"flat": flatTheme}
+	layouts   = map[string]func(*lipgloss.Renderer) theme{"flat": flatTheme, "tape": tapeTheme}
 	themeName = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 	hexColor  = regexp.MustCompile(`^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`)
 )
 
 func builtinThemes(r *lipgloss.Renderer) []theme {
-	return []theme{flatTheme(r)}
+	return []theme{flatTheme(r), tapeTheme(r)}
 }
 
 func layoutNames() []string {
@@ -147,7 +152,45 @@ func parseTheme(r *lipgloss.Renderer, data []byte) (theme, error) {
 		}
 		*g.dst = *g.value
 	}
+	if err := applyTape(&t, f, f.Layout); err != nil {
+		return theme{}, err
+	}
 	return t, nil
+}
+
+func applyTape(t *theme, f themeFile, layout string) error {
+	tp := f.Tape
+	if tp.Brand == nil && tp.Kind == nil && tp.Minutes == nil {
+		return nil
+	}
+	if layout != "tape" {
+		return errors.New(`[tape] needs layout = "tape"`)
+	}
+	labels := []struct {
+		key   string
+		value *string
+		limit int
+		dst   *string
+	}{
+		{"brand", tp.Brand, 20, &t.tape.brand},
+		{"type", tp.Kind, 30, &t.tape.kind},
+	}
+	for _, l := range labels {
+		if l.value == nil {
+			continue
+		}
+		if lipgloss.Width(*l.value) > l.limit {
+			return fmt.Errorf("tape.%s: longer than %d columns", l.key, l.limit)
+		}
+		*l.dst = *l.value
+	}
+	if tp.Minutes != nil {
+		if *tp.Minutes < 10 || *tp.Minutes > 180 {
+			return fmt.Errorf("tape.minutes: %d is not between 10 and 180", *tp.Minutes)
+		}
+		t.tape.minutes = *tp.Minutes
+	}
+	return nil
 }
 
 func validColor(s string) bool {

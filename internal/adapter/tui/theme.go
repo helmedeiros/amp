@@ -16,6 +16,7 @@ type theme struct {
 	name     string
 	layout   layout
 	glyphs   glyphs
+	tape     tapeInfo
 	states   map[music.PlayerState]lipgloss.Style
 	track    lipgloss.Style
 	dim      lipgloss.Style

@@ -48,6 +48,27 @@ load_on = "#"
 	assert.Equal(t, flatTheme(trueColorRenderer()).state(music.Paused).Render("x"), th.state(music.Paused).Render("x"), "unset colors come from the layout")
 }
 
+func TestParseThemeReadsTheTapeSection(t *testing.T) {
+	t.Parallel()
+
+	th, err := parseTheme(trueColorRenderer(), []byte(`
+name = "sony"
+layout = "tape"
+
+[tape]
+brand = "SONY"
+type = "EF90 TYPE I (NORMAL)"
+minutes = 90
+`))
+	require.NoError(t, err)
+	assert.IsType(t, tapeLayout{}, th.layout)
+	assert.Equal(t, tapeInfo{brand: "SONY", kind: "EF90 TYPE I (NORMAL)", minutes: 90}, th.tape)
+
+	th, err = parseTheme(trueColorRenderer(), []byte("name = \"deck\"\nlayout = \"tape\""))
+	require.NoError(t, err)
+	assert.Equal(t, tapeTheme(trueColorRenderer()).tape, th.tape, "the tape layout's defaults")
+}
+
 func TestParseThemeDefaultsToTheFlatLayout(t *testing.T) {
 	t.Parallel()
 
@@ -62,12 +83,14 @@ func TestParseThemeRejectsBadFiles(t *testing.T) {
 	cases := map[string]struct{ file, want string }{
 		"syntax":        {file: `name = `, want: "toml"},
 		"no name":       {file: `layout = "flat"`, want: "name is required"},
-		"bad layout":    {file: "name = \"x\"\nlayout = \"vinyl\"", want: `unknown layout "vinyl" (flat)`},
+		"bad layout":    {file: "name = \"x\"\nlayout = \"vinyl\"", want: `unknown layout "vinyl" (flat, tape)`},
 		"typo key":      {file: "name = \"x\"\n[colors]\nplayng = \"2\"", want: "unknown key colors.playng"},
 		"bad color":     {file: "name = \"x\"\n[colors]\ndim = \"teal\"", want: `colors.dim: invalid color "teal"`},
 		"out of range":  {file: "name = \"x\"\n[colors]\ndim = \"256\"", want: `colors.dim: invalid color "256"`},
 		"wide glyph":    {file: "name = \"x\"\n[glyphs]\ncursor = \"=>\"", want: `glyphs.cursor: "=>" must be one column wide`},
 		"empty glyph":   {file: "name = \"x\"\n[glyphs]\nfill = \"\"", want: `glyphs.fill: "" must be one column wide`},
+		"tape on flat":  {file: "name = \"x\"\n[tape]\nbrand = \"TDK\"", want: "[tape] needs layout = \"tape\""},
+		"tape minutes":  {file: "name = \"x\"\nlayout = \"tape\"\n[tape]\nminutes = 7", want: "tape.minutes: 7 is not between 10 and 180"},
 		"name with dir": {file: `name = "../x"`, want: `name "../x" may only use letters, digits, - and _`},
 	}
 	for name, c := range cases {
@@ -97,7 +120,7 @@ func TestLoadThemesAddsUserFilesAfterTheBuiltins(t *testing.T) {
 
 	themes, warnings := loadThemes(trueColorRenderer(), dir)
 
-	assert.Equal(t, []string{"flat", "alpha", "zeta"}, names(themes))
+	assert.Equal(t, []string{"flat", "tape", "alpha", "zeta"}, names(themes))
 	require.Len(t, warnings, 1)
 	assert.Contains(t, warnings[0], "broken.toml")
 }
@@ -111,7 +134,7 @@ func TestLoadThemesLetsAFileReplaceABuiltin(t *testing.T) {
 	themes, warnings := loadThemes(trueColorRenderer(), dir)
 
 	assert.Empty(t, warnings)
-	assert.Equal(t, []string{"flat"}, names(themes))
+	assert.Equal(t, []string{"flat", "tape"}, names(themes))
 	assert.Equal(t, ">", themes[0].glyphs.cursor)
 }
 
@@ -120,7 +143,7 @@ func TestLoadThemesWithoutAThemesFolder(t *testing.T) {
 
 	themes, warnings := loadThemes(trueColorRenderer(), filepath.Join(t.TempDir(), "missing"))
 
-	assert.Equal(t, []string{"flat"}, names(themes))
+	assert.Equal(t, []string{"flat", "tape"}, names(themes))
 	assert.Empty(t, warnings)
 }
 
@@ -145,7 +168,7 @@ func TestResolveThemePicksTheRequestedThenTheRemembered(t *testing.T) {
 	assert.Equal(t, "flat", set.themes[set.current].name, "the flag wins")
 
 	_, err = resolveThemes(r, Options{ConfigDir: dir, Theme: "vinyl"})
-	require.EqualError(t, err, `unknown theme "vinyl" (available: flat, mint)`)
+	require.EqualError(t, err, `unknown theme "vinyl" (available: flat, tape, mint)`)
 
 	require.NoError(t, saveThemeName(dir, "gone"))
 	set, err = resolveThemes(r, Options{ConfigDir: dir})
