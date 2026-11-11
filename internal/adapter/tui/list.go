@@ -115,13 +115,13 @@ func (l list) View(t theme) string {
 	for i := l.offset; i < end; i++ {
 		switch i {
 		case l.cursor:
-			prefix := "▶ "
+			prefix := t.glyphs.cursor + " "
 			if i == l.marker {
-				prefix = "♪ " // cursor is sitting on the playing track
+				prefix = t.glyphs.marker + " "
 			}
 			b.WriteString(prefix + t.selected.Render(l.items[i]) + "\n")
 		case l.marker:
-			b.WriteString("♪ " + t.current.Render(l.items[i]) + "\n")
+			b.WriteString(t.glyphs.marker + " " + t.current.Render(l.items[i]) + "\n")
 		default:
 			b.WriteString("  " + l.items[i] + "\n")
 		}
