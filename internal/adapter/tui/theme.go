@@ -13,6 +13,7 @@ type glyphs struct {
 }
 
 type theme struct {
+	name     string
 	layout   layout
 	glyphs   glyphs
 	states   map[music.PlayerState]lipgloss.Style
@@ -27,6 +28,7 @@ type theme struct {
 func flatTheme(r *lipgloss.Renderer) theme {
 	color := func(c string) lipgloss.Style { return r.NewStyle().Foreground(lipgloss.Color(c)) }
 	return theme{
+		name:   "flat",
 		layout: flatLayout{},
 		glyphs: glyphs{cursor: "▶", marker: "♪", fill: "━", empty: "─", loadOn: "▓", loadOff: "░"},
 		states: map[music.PlayerState]lipgloss.Style{

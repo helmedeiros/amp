@@ -65,6 +65,7 @@ type (
 	}
 	// flashClearMsg clears the transient success line after a short delay.
 	flashClearMsg struct{}
+	themeSaveMsg  struct{ err error }
 	// artistAlbumsMsg carries an artist's catalog albums for the add picker.
 	artistAlbumsMsg struct {
 		artist string
@@ -170,7 +171,10 @@ type app struct {
 	// catalogOn reflects whether Apple Music is connected, shown in the header.
 	catalogOn bool
 
-	theme theme
+	theme     theme
+	themes    []theme
+	themeIdx  int
+	saveTheme func(string) error
 }
 
 func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) app {
@@ -351,6 +355,13 @@ func (m app) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.flash = ""
 		return m, nil
 
+	case themeSaveMsg:
+		if msg.err != nil {
+			m.flash = ""
+			m.notice = "theme not saved: " + msg.err.Error()
+		}
+		return m, nil
+
 	case artistAlbumsMsg:
 		m.working = false
 		if msg.err != nil {
@@ -458,6 +469,8 @@ func (m app) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.active == tabQueue && m.queue.following() {
 			return m.takeOverPlaying()
 		}
+	case "T":
+		return m.nextTheme()
 	case "n":
 		return m, actionCmd(func() error { return m.ctrl.Next(m.ctx) })
 	case "p":
@@ -1040,7 +1053,27 @@ func (m app) hint() string {
 	if m.active == tabQueue && m.queue.following() {
 		base += " · t take over"
 	}
+	if len(m.themes) > 1 {
+		base += " · T theme"
+	}
 	return base + " · q quit"
+}
+
+func (m *app) useThemes(set themeSet, save func(string) error) {
+	m.themes, m.themeIdx, m.saveTheme = set.themes, set.current, save
+	m.theme = set.themes[set.current]
+	m.notice = strings.Join(set.warnings, " · ")
+}
+
+func (m app) nextTheme() (tea.Model, tea.Cmd) {
+	if len(m.themes) < 2 {
+		return m, nil
+	}
+	m.themeIdx = (m.themeIdx + 1) % len(m.themes)
+	m.theme = m.themes[m.themeIdx]
+	m.flash = "theme: " + m.theme.name
+	name, save := m.theme.name, m.saveTheme
+	return m, tea.Batch(func() tea.Msg { return themeSaveMsg{err: save(name)} }, clearFlashAfter())
 }
 
 func (t theme) filterPrompt(query string, editing bool) string {
@@ -1184,8 +1217,14 @@ func clock(d time.Duration) string {
 }
 
 // RunApp runs the tabbed TUI until the user quits or ctx is cancelled.
-func RunApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) error {
-	p := tea.NewProgram(newApp(ctx, ctrl, stream), tea.WithAltScreen(), tea.WithContext(ctx))
-	_, err := p.Run()
+func RunApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status, opts Options) error {
+	set, err := resolveThemes(lipgloss.DefaultRenderer(), opts)
+	if err != nil {
+		return err
+	}
+	m := newApp(ctx, ctrl, stream)
+	m.useThemes(set, func(name string) error { return saveThemeName(opts.ConfigDir, name) })
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+	_, err = p.Run()
 	return err
 }
