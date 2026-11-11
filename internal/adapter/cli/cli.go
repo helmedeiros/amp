@@ -66,7 +66,8 @@ func NewRootCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 }
 
 func tuiCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
-	return &cobra.Command{
+	var themeName string
+	cmd := &cobra.Command{
 		Use:   "tui",
 		Short: "Live full-screen now-playing view with tabs",
 		Args:  cobra.NoArgs,
@@ -78,9 +79,11 @@ func tuiCmd(ctrl port.Controller, stream StatusStream) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return tui.RunApp(cmd.Context(), ctrl, ch)
+			return tui.RunApp(cmd.Context(), ctrl, ch, tui.Options{Theme: themeName, ConfigDir: tui.DefaultConfigDir()})
 		},
 	}
+	cmd.Flags().StringVar(&themeName, "theme", "", "start with this theme (built in: flat; T cycles; files in <config>/amp/themes)")
+	return cmd
 }
 
 // buildVersion reports the module version this binary was built from, falling
