@@ -101,9 +101,9 @@ func (l *list) clamp() {
 	}
 }
 
-func (l list) View() string {
+func (l list) View(t theme) string {
 	if len(l.items) == 0 {
-		return dimStyle.Render("  (empty)")
+		return t.dim.Render("  (empty)")
 	}
 
 	end := l.offset + l.height
@@ -119,9 +119,9 @@ func (l list) View() string {
 			if i == l.marker {
 				prefix = "♪ " // cursor is sitting on the playing track
 			}
-			b.WriteString(prefix + selectedStyle.Render(l.items[i]) + "\n")
+			b.WriteString(prefix + t.selected.Render(l.items[i]) + "\n")
 		case l.marker:
-			b.WriteString("♪ " + playingStyle.Render(l.items[i]) + "\n")
+			b.WriteString("♪ " + t.current.Render(l.items[i]) + "\n")
 		default:
 			b.WriteString("  " + l.items[i] + "\n")
 		}

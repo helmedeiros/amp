@@ -16,19 +16,6 @@ import (
 
 const headerBarWidth = 40
 
-var (
-	stateStyle = map[music.PlayerState]lipgloss.Style{
-		music.Playing: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("2")),
-		music.Paused:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3")),
-		music.Stopped: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("8")),
-	}
-	trackStyle     = lipgloss.NewStyle().Bold(true)
-	dimStyle       = lipgloss.NewStyle().Faint(true)
-	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	playingStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	noticeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-)
-
 // tabID identifies a content tab.
 type tabID int
 
@@ -185,6 +172,8 @@ type app struct {
 
 	// catalogOn reflects whether Apple Music is connected, shown in the header.
 	catalogOn bool
+
+	theme theme
 }
 
 func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Status) app {
@@ -201,6 +190,7 @@ func newApp(ctx context.Context, ctrl port.Controller, stream <-chan music.Statu
 		loaded:    make([]bool, len(tabNames)),
 		catalogOn: ctrl.CatalogEnabled(),
 		width:     80, height: 24,
+		theme: flatTheme(lipgloss.DefaultRenderer()),
 	}
 }
 
@@ -943,30 +933,30 @@ func (m app) View() string {
 	}
 	if m.picking {
 		return m.viewTop() + m.renderPicker() + "\n\n" +
-			dimStyle.Render("j/k move · space toggle · a all/none · enter add · esc cancel")
+			m.theme.dim.Render("j/k move · space toggle · a all/none · enter add · esc cancel")
 	}
-	return m.viewTop() + m.lists[m.active].View() + m.viewBottom()
+	return m.viewTop() + m.lists[m.active].View(m.theme) + m.viewBottom()
 }
 
 func (m app) viewTop() string {
 	var b strings.Builder
-	b.WriteString(renderHeader(m.status, m.hasStatus, m.catalogOn))
+	b.WriteString(m.theme.header(m.status, m.hasStatus, m.catalogOn))
 	b.WriteString("\n\n")
-	b.WriteString(renderTabBar(m.active))
+	b.WriteString(m.theme.tabBar(m.active))
 	b.WriteString("\n\n")
 	if m.picking {
 		return b.String()
 	}
 	if m.active == tabSearch {
-		b.WriteString(renderSearchPrompt(m.searchQuery, m.searchEditing))
+		b.WriteString(m.theme.searchPrompt(m.searchQuery, m.searchEditing))
 		b.WriteString("\n\n")
 	} else if m.filtering || m.filterQuery != "" {
-		b.WriteString(renderFilterPrompt(m.filterQuery, m.filtering))
+		b.WriteString(m.theme.filterPrompt(m.filterQuery, m.filtering))
 		b.WriteString("\n\n")
 	}
 	if m.active == tabQueue {
 		if t := m.queue.title(m.loaded[tabQueue] && len(m.items[tabQueue]) == 0); t != "" {
-			b.WriteString(activeTabStyle.Render(t))
+			b.WriteString(m.theme.accent.Render(t))
 			b.WriteString("\n\n")
 		}
 	}
@@ -982,16 +972,16 @@ func (m app) viewBottom() string {
 		if label == "" {
 			label = "working…"
 		}
-		b.WriteString(playingStyle.Render(loadBar(m.workFrame, 24)) + "  " + dimStyle.Render(label))
+		b.WriteString(m.theme.current.Render(loadBar(m.workFrame, 24)) + "  " + m.theme.dim.Render(label))
 		b.WriteString("\n\n")
 	case m.flash != "":
-		b.WriteString(playingStyle.Render(m.flash))
+		b.WriteString(m.theme.current.Render(m.flash))
 		b.WriteString("\n\n")
 	case m.notice != "":
-		b.WriteString(noticeStyle.Render(m.notice))
+		b.WriteString(m.theme.notice.Render(m.notice))
 		b.WriteString("\n\n")
 	}
-	b.WriteString(dimStyle.Render(m.hint()))
+	b.WriteString(m.theme.dim.Render(m.hint()))
 	return b.String()
 }
 
@@ -1004,16 +994,16 @@ func (m app) renderPicker() string {
 		}
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s\n", trackStyle.Render("Add "+m.pickArtist+" albums from Apple Music"))
-	fmt.Fprintf(&b, "%s\n\n", dimStyle.Render(fmt.Sprintf("%d of %d selected · not in your library", selected, len(m.pickAlbums))))
+	fmt.Fprintf(&b, "%s\n", m.theme.track.Render("Add "+m.pickArtist+" albums from Apple Music"))
+	fmt.Fprintf(&b, "%s\n\n", m.theme.dim.Render(fmt.Sprintf("%d of %d selected · not in your library", selected, len(m.pickAlbums))))
 	for i, a := range m.pickAlbums {
 		box := "[ ]"
 		if m.pickChecked[i] {
 			box = "[x]"
 		}
-		line := fmt.Sprintf("%s %s  %s", box, a.Name, dimStyle.Render(fmt.Sprintf("%d tracks", a.TrackCount)))
+		line := fmt.Sprintf("%s %s  %s", box, a.Name, m.theme.dim.Render(fmt.Sprintf("%d tracks", a.TrackCount)))
 		if i == m.pickCursor {
-			b.WriteString("▶ " + selectedStyle.Render(line) + "\n")
+			b.WriteString("▶ " + m.theme.selected.Render(line) + "\n")
 		} else {
 			b.WriteString("  " + line + "\n")
 		}
@@ -1052,66 +1042,66 @@ func (m app) hint() string {
 	return base + " · q quit"
 }
 
-func renderFilterPrompt(query string, editing bool) string {
+func (t theme) filterPrompt(query string, editing bool) string {
 	if editing {
 		return "filter: " + query + "▌"
 	}
-	return "filter: " + query + dimStyle.Render("  (esc clear)")
+	return "filter: " + query + t.dim.Render("  (esc clear)")
 }
 
-func renderSearchPrompt(query string, editing bool) string {
+func (t theme) searchPrompt(query string, editing bool) string {
 	if editing {
 		return "search: " + query + "▌"
 	}
 	if query == "" {
-		return dimStyle.Render("search: press / to type a query")
+		return t.dim.Render("search: press / to type a query")
 	}
 	return "search: " + query
 }
 
-func renderTabBar(active tabID) string {
+func (t theme) tabBar(active tabID) string {
 	parts := make([]string, len(tabNames))
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if tabID(i) == active {
-			label = activeTabStyle.Render(label)
+			label = t.accent.Render(label)
 		} else {
-			label = dimStyle.Render(label)
+			label = t.dim.Render(label)
 		}
 		parts[i] = label
 	}
 	return strings.Join(parts, "   ")
 }
 
-func renderHeader(s music.Status, hasStatus, catalogOn bool) string {
+func (t theme) header(s music.Status, hasStatus, catalogOn bool) string {
 	if !hasStatus {
-		return dimStyle.Render("connecting…")
+		return t.dim.Render("connecting…")
 	}
 
 	var b strings.Builder
-	b.WriteString(stateStyle[s.State].Render(strings.ToUpper(s.State.String())))
+	b.WriteString(t.state(s.State).Render(strings.ToUpper(s.State.String())))
 	if s.HasTrack() {
-		fmt.Fprintf(&b, "\n%s", trackStyle.Render(artistTitle(s.Track)))
+		fmt.Fprintf(&b, "\n%s", t.track.Render(artistTitle(s.Track)))
 		if s.Track.Album != "" {
-			fmt.Fprintf(&b, "\n%s", dimStyle.Render(s.Track.Album))
+			fmt.Fprintf(&b, "\n%s", t.dim.Render(s.Track.Album))
 		}
 		fmt.Fprintf(&b, "\n%s %s %s  %s",
 			clock(s.Elapsed), bar(s.Progress(), headerBarWidth), clock(s.Track.Duration),
-			dimStyle.Render(fmt.Sprintf("%d%%", int(math.Round(s.Progress()*100)))),
+			t.dim.Render(fmt.Sprintf("%d%%", int(math.Round(s.Progress()*100)))),
 		)
 	}
-	fmt.Fprintf(&b, "\n%s", dimStyle.Render(fmt.Sprintf("vol %d%%", s.Volume.Int())))
+	fmt.Fprintf(&b, "\n%s", t.dim.Render(fmt.Sprintf("vol %d%%", s.Volume.Int())))
 	if s.Shuffle {
-		b.WriteString(dimStyle.Render("  shuffle"))
+		b.WriteString(t.dim.Render("  shuffle"))
 	}
 	if s.Repeat != music.RepeatOff {
-		b.WriteString(dimStyle.Render("  repeat " + s.Repeat.String()))
+		b.WriteString(t.dim.Render("  repeat " + s.Repeat.String()))
 	}
 	tag := "  · Apple Music off"
 	if catalogOn {
 		tag = "  · Apple Music ✓"
 	}
-	b.WriteString(dimStyle.Render(tag))
+	b.WriteString(t.dim.Render(tag))
 	return b.String()
 }
 

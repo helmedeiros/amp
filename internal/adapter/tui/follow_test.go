@@ -118,7 +118,7 @@ func TestAppFollowedQueueFitsTheTerminal(t *testing.T) {
 
 	view := m.View()
 	assert.Equal(t, 30, strings.Count(view, "\n")+1, "the frame fills the terminal exactly")
-	assert.True(t, strings.HasPrefix(view, stateStyle[music.Playing].Render("PLAYING")), "the header stays on screen")
+	assert.True(t, strings.HasPrefix(view, m.theme.state(music.Playing).Render("PLAYING")), "the header stays on screen")
 	assert.Contains(t, view, "Following Music.app")
 }
 
