@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-11-12
+
+### Added
+
+- **TUI themes: `flat` and `tape`.** `flat` is the look so far. `tape` draws
+  the player as a cassette deck while playing: reels that trade tape as the
+  track runs and turn only while playing, a tape counter, volume LEDs, and the
+  current state's transport button pressed. While paused, the deck shrinks to
+  a cassette spine and the Queue becomes a J-card, with side A and side B split
+  where the next track would run past half the tape (45 minutes on a C90).
+  Below 64 columns it falls back to the flat header.
+- **TUI: `T` cycles themes, and amp remembers the last one.** `amp tui --theme
+  <name>` picks one at start.
+- **Theme files.** Drop a TOML file in `~/Library/Application
+  Support/amp/themes/` to make your own: pick a layout and override colors,
+  glyphs, and the cassette's brand, type and length. Unknown keys, bad colors
+  and glyphs wider than one column are rejected; a broken file is reported in
+  the TUI and skipped. See the README and ADR-0006.
+
 ## [0.9.1] - 2026-11-09
 
 ### Fixed
@@ -195,6 +214,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.10.0]: https://github.com/helmedeiros/amp/releases/tag/v0.10.0
 [0.9.1]: https://github.com/helmedeiros/amp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/helmedeiros/amp/releases/tag/v0.9.0
 [0.8.0]: https://github.com/helmedeiros/amp/releases/tag/v0.8.0
