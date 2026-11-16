@@ -18,12 +18,18 @@ type call struct {
 
 type fakeRunner struct {
 	out   []byte
+	outs  [][]byte
 	err   error
 	calls []call
 }
 
 func (f *fakeRunner) Run(_ context.Context, lang language, script string) ([]byte, error) {
 	f.calls = append(f.calls, call{lang: lang, script: script})
+	if len(f.outs) > 0 {
+		out := f.outs[0]
+		f.outs = f.outs[1:]
+		return out, f.err
+	}
 	return f.out, f.err
 }
 
