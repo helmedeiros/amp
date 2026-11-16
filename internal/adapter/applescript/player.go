@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/helmedeiros/amp/internal/music"
 	"github.com/helmedeiros/amp/internal/port"
@@ -15,6 +16,15 @@ import (
 // Player controls Music.app and implements port.Player.
 type Player struct {
 	run runner
+
+	mu   sync.Mutex
+	last searchResult
+}
+
+type searchResult struct {
+	query  string
+	limit  int
+	tracks []music.LibraryTrack
 }
 
 // New returns a Player backed by the real osascript binary.
@@ -54,20 +64,60 @@ func (p *Player) SaveArtwork(ctx context.Context, path string) error {
 	return err
 }
 
-// Search returns library tracks matching query, up to limit (<= 0 for all).
+// Search returns library tracks matching query, best match first, up to limit (<= 0 for all).
 func (p *Player) Search(ctx context.Context, query string, limit int) ([]music.Track, error) {
-	out, err := p.run.Run(ctx, javaScript, searchScript(query, limit))
+	ranked, err := p.rank(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
-	return parseTracks(out)
+	p.mu.Lock()
+	p.last = searchResult{query: query, limit: limit, tracks: ranked}
+	p.mu.Unlock()
+
+	tracks := make([]music.Track, len(ranked))
+	for i, t := range ranked {
+		tracks[i] = t.Track
+	}
+	return tracks, nil
 }
 
-// PlaySearch loads the search results into the managed queue, rotated so the
-// track at start is first, and plays from the top.
+// PlaySearch queues the results of the last matching Search rotated so the track at start is first, and plays.
 func (p *Player) PlaySearch(ctx context.Context, query string, limit, start int) error {
-	_, err := p.run.Run(ctx, javaScript, playSearchScript(query, limit, start))
+	ranked, err := p.lastOrRank(ctx, query, limit)
+	if err != nil || len(ranked) == 0 {
+		return err
+	}
+	_, err = p.run.Run(ctx, javaScript, queueIDsScript(trackIDs(rotate(ranked, start)), true))
 	return err
+}
+
+func (p *Player) lastOrRank(ctx context.Context, query string, limit int) ([]music.LibraryTrack, error) {
+	p.mu.Lock()
+	last := p.last
+	p.mu.Unlock()
+	if last.tracks != nil && last.query == query && last.limit == limit {
+		return last.tracks, nil
+	}
+	return p.rank(ctx, query, limit)
+}
+
+func (p *Player) rank(ctx context.Context, query string, limit int) ([]music.LibraryTrack, error) {
+	out, err := p.run.Run(ctx, javaScript, libraryTracksScript)
+	if err != nil {
+		return nil, err
+	}
+	lib, err := parseLibraryTracks(out)
+	if err != nil {
+		return nil, err
+	}
+	ranked := music.Search(query, lib)
+	if limit > 0 && len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+	if ranked == nil {
+		ranked = []music.LibraryTrack{}
+	}
+	return ranked, nil
 }
 
 // PlayPlaylist plays the named user playlist.
@@ -150,17 +200,21 @@ func (p *Player) Queue(ctx context.Context) ([]music.Track, error) {
 // QueueAdd appends the search results to the queue and returns how many were
 // added.
 func (p *Player) QueueAdd(ctx context.Context, query string, limit int) (int, error) {
-	out, err := p.run.Run(ctx, javaScript, queueAddScript(query, limit))
+	ranked, err := p.rank(ctx, query, limit)
+	if err != nil || len(ranked) == 0 {
+		return 0, err
+	}
+	out, err := p.run.Run(ctx, javaScript, queueIDsScript(trackIDs(ranked), false))
 	if err != nil {
 		return 0, err
 	}
 	var res struct {
-		Added int `json:"added"`
+		Queued int `json:"queued"`
 	}
 	if err := json.Unmarshal(out, &res); err != nil {
 		return 0, fmt.Errorf("decode queue add: %w", err)
 	}
-	return res.Added, nil
+	return res.Queued, nil
 }
 
 // QueueClear empties the queue.

@@ -7,30 +7,95 @@ import (
 	"github.com/helmedeiros/amp/internal/music"
 )
 
-// searchScript builds a JXA program that searches the library and prints the
-// matching tracks as JSON. The query is embedded as a JSON literal so it is
-// safely escaped and cannot break out of the script. A limit <= 0 returns all
-// matches.
-func searchScript(query string, limit int) string {
-	q, _ := json.Marshal(query) // string marshaling never fails
-
-	return fmt.Sprintf(`
+const libraryTracksScript = `
 const Music = Application('Music');
-const out = [];
+let out = {};
 if (Music.running()) {
-  let res = Music.search(Music.libraryPlaylists[0], {for: %s, only: 'all'});
-  const limit = %d;
-  if (limit > 0) res = res.slice(0, limit);
-  for (const t of res) {
-    // Search can return stale references that throw -1728 on every property;
-    // skip any track we cannot fully read.
-    try {
-      out.push({name: t.name(), artist: t.artist(), album: t.album(), duration: t.duration()});
-    } catch (e) {}
-  }
+  const tr = Music.libraryPlaylists[0].tracks;
+  out = {
+    id: tr.persistentID(), name: tr.name(), artist: tr.artist(), album: tr.album(),
+    duration: tr.duration(), plays: tr.playedCount(), number: tr.trackNumber(),
+  };
 }
 JSON.stringify(out);
-`, q, limit)
+`
+
+type libraryColumns struct {
+	ID       []string  `json:"id"`
+	Name     []string  `json:"name"`
+	Artist   []string  `json:"artist"`
+	Album    []string  `json:"album"`
+	Duration []float64 `json:"duration"`
+	Plays    []int     `json:"plays"`
+	Number   []int     `json:"number"`
+}
+
+func parseLibraryTracks(raw []byte) ([]music.LibraryTrack, error) {
+	var c libraryColumns
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return nil, fmt.Errorf("decode library: %w", err)
+	}
+	n := min(len(c.ID), len(c.Name), len(c.Artist), len(c.Album), len(c.Duration), len(c.Plays), len(c.Number))
+	tracks := make([]music.LibraryTrack, n)
+	for i := range n {
+		tracks[i] = music.LibraryTrack{
+			Track: music.Track{
+				Name:     c.Name[i],
+				Artist:   c.Artist[i],
+				Album:    c.Album[i],
+				Duration: seconds(c.Duration[i]),
+			},
+			ID:          c.ID[i],
+			Plays:       c.Plays[i],
+			TrackNumber: c.Number[i],
+		}
+	}
+	return tracks, nil
+}
+
+func queueIDsScript(ids []string, play bool) string {
+	want, _ := json.Marshal(ids)
+	qn, _ := json.Marshal(queuePlaylistName)
+	clear := ""
+	if play {
+		clear = "Music.delete(pl.tracks);"
+	}
+	return fmt.Sprintf(`
+const Music = Application('Music');
+const lib = Music.libraryPlaylists[0];
+const want = %s;
+const index = new Map();
+const all = lib.tracks.persistentID();
+for (let i = 0; i < all.length; i++) index.set(all[i], i);
+let pl;
+try { pl = Music.userPlaylists.byName(%s); pl.name(); %s }
+catch (e) { pl = Music.make({new: 'playlist', withProperties: {name: %s}}); }
+let n = 0;
+for (const id of want) {
+  const i = index.get(id);
+  if (i === undefined) continue;
+  try { Music.duplicate(lib.tracks[i], {to: pl}); n++; } catch (e) {}
+}
+if (%t && n > 0) pl.play();
+JSON.stringify({queued: n});
+`, want, qn, clear, qn, play)
+}
+
+func trackIDs(tracks []music.LibraryTrack) []string {
+	ids := make([]string, len(tracks))
+	for i, t := range tracks {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
+func rotate[T any](s []T, start int) []T {
+	n := len(s)
+	if n == 0 {
+		return s
+	}
+	i := ((start % n) + n) % n
+	return append(append([]T{}, s[i:]...), s[:i]...)
 }
 
 // parseTracks decodes a JSON array of tracks into the domain type.
