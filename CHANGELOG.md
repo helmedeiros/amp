@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-11-16
+
+### Changed
+
+- **Search results come best match first.** Before, matches came back in
+  library order (alphabetical by artist). Now they rank from best to worst: an
+  exact title or artist, then the title without its "(Live)"/"- Remastered"
+  suffix, a title plus artist ("yesterday beatles"), an exact album, a title
+  that starts with the query (even mid-word, as you type), and looser matches
+  after that. A version (live, remix, remaster) ranks below the original
+  unless the query names it. Ties go to the track you have played most. Case,
+  accents, apostrophes and `&`/"and" are ignored. `--limit` now keeps the top
+  matches instead of the first ones in library order. This applies to `amp
+  search`, `amp play <query>`, `amp queue add` and the TUI Search tab.
+- **Search is faster.** The library is read in a few bulk calls instead of one
+  call per track: "love" on a 13.8k-track library went from about 2.7s to
+  0.8s.
+
 ## [0.10.0] - 2026-11-12
 
 ### Added
@@ -214,6 +232,7 @@ application / adapters) and a wide unit-test base over a single osascript seam.
 - Removed the legacy iTunes-era shell scripts (superseded by the Go CLI; still
   available in git history).
 
+[0.11.0]: https://github.com/helmedeiros/amp/releases/tag/v0.11.0
 [0.10.0]: https://github.com/helmedeiros/amp/releases/tag/v0.10.0
 [0.9.1]: https://github.com/helmedeiros/amp/releases/tag/v0.9.1
 [0.9.0]: https://github.com/helmedeiros/amp/releases/tag/v0.9.0
